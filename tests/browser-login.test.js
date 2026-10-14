@@ -155,6 +155,13 @@ describe('BrowserLogin', () => {
         expect(login.handleUri(callback({ code: 'c', state: STATE }, '/other')).accepted).toBe(false);
     });
 
+    it('explains a callback that arrives with no login in progress', () => {
+        expect(login.handleUri(callback({ code: 'c', state: STATE }))).toEqual({
+            accepted: false,
+            reason: 'No login in progress. Run Login Team again.',
+        });
+    });
+
     it('accepts a state only once', async () => {
         const result = login.waitForHandoffCode();
         await vi.advanceTimersByTimeAsync(0);

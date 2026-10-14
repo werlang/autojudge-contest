@@ -165,6 +165,16 @@ describe('browser team login', () => {
         expect(vscodeState.showErrorMessage).not.toHaveBeenCalled();
     });
 
+    it('tells the user when a callback arrives with no login in progress and does not redeem it', () => {
+        const { uriHandler } = registerLogin();
+
+        uriHandler.handleUri({ path: '/auth', query: `code=handoff-code&state=${'a'.repeat(43)}` });
+
+        expect(vscodeState.showErrorMessage).toHaveBeenCalledWith('No login in progress. Run Login Team again.');
+        expect(outputChannel.appendLine).toHaveBeenCalledWith('No login in progress. Run Login Team again.');
+        expect(contestSession.redeemAndLoadContest).not.toHaveBeenCalled();
+    });
+
     it('ignores a callback with a mismatched or missing state, tells the user, and keeps waiting', async () => {
         contestSession.redeemAndLoadContest.mockResolvedValue({
             contest: { name: 'Regional Final', teams: [] },

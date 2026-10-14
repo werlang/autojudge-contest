@@ -159,7 +159,7 @@ export class BrowserLogin {
         }
 
         if (!this.pending) {
-            return { accepted: false, reason: 'Ignored a login link because no login is in progress. Run Login Team again.' };
+            return { accepted: false, reason: 'No login in progress. Run Login Team again.' };
         }
 
         const params = new URLSearchParams(uri.query ?? '');
