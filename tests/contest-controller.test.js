@@ -68,6 +68,52 @@ function createSnapshot() {
     };
 }
 
+/**
+ * Build a snapshot whose payload carries only public keys, the shape newer
+ * servers send: publicId on contests and problems, solvedProblemIds and
+ * scoreboardId on teams, and no numeric ids anywhere.
+ * @returns {object}
+ */
+function createPublicIdSnapshot() {
+    const problems = [
+        { publicId: 'pa1b2c3d4e5f6', order: 1, title: 'A + B' },
+        { publicId: 'pb2c3d4e5f6a1', order: 2, title: 'Binary Search' },
+    ];
+    const contest = {
+        duration: 180,
+        name: 'Regional Final',
+        problems,
+        publicId: 'k3m9x2p7q8w1a',
+        startTime: '2026-05-28T03:00:00.000Z',
+        teams: [
+            {
+                name: 'Array Ninjas',
+                scoreboardId: 'sb-ninjas-7f3a',
+                score: 350000,
+                solvedProblemIds: ['pa1b2c3d4e5f6', 'pb2c3d4e5f6a1'],
+            },
+            {
+                name: 'Bits',
+                scoreboardId: 'sb-bits-91cd',
+                score: 200000,
+                solvedProblemIds: ['pa1b2c3d4e5f6'],
+            },
+        ],
+    };
+
+    return {
+        problems: [problems[0]],
+        submissions: [],
+        team: {
+            contest,
+            name: 'Bits',
+            scoreboardId: 'sb-bits-91cd',
+        },
+        contest,
+        token: 'team-jwt-token',
+    };
+}
+
 describe('contest controller', () => {
     let context;
     let outputChannel;
@@ -406,6 +452,76 @@ describe('contest controller', () => {
         expect(result).toEqual(team);
     });
 
+    it('names the contest dashboard preview by public id when the server omits numeric ids', async () => {
+        const snapshot = createPublicIdSnapshot();
+        const document = { uri: 'file:///workspace/.autojudge-state/contest-dashboards/contest-k3m9x2p7q8w1a.md' };
+        openTextDocument.mockResolvedValue(document);
+
+        const controller = createContestController({
+            context,
+            executeCommand,
+            openTextDocument,
+            outputChannel,
+            promptTeamCredentials,
+            resolvePollIntervalMs,
+            resolveBaseUrl,
+            sessionApi,
+            setContext,
+            showInformationMessage,
+            showTextDocument,
+            showErrorMessage,
+            submissionWorkspace,
+            teamsStandingsProvider,
+            treeProvider,
+        });
+
+        await controller.openContestDashboard(snapshot.contest);
+
+        expect(fsState.writeFile).toHaveBeenCalledWith(
+            '/workspace/.autojudge-state/contest-dashboards/contest-k3m9x2p7q8w1a.md',
+            expect.stringContaining('# 🏆 Contest Regional Final'),
+            { encoding: 'utf-8' }
+        );
+        expect(openTextDocument).toHaveBeenCalledWith('/workspace/.autojudge-state/contest-dashboards/contest-k3m9x2p7q8w1a.md');
+    });
+
+    it('names the team standing preview by scoreboard id and ranks it from public-id standings', async () => {
+        const snapshot = createPublicIdSnapshot();
+        treeProvider.getSnapshot.mockReturnValue(snapshot);
+        openTextDocument.mockResolvedValue({ uri: 'file:///workspace/.autojudge-state/team-details/team-sb-bits-91cd.md' });
+
+        const controller = createContestController({
+            context,
+            executeCommand,
+            openTextDocument,
+            outputChannel,
+            promptTeamCredentials,
+            resolvePollIntervalMs,
+            resolveBaseUrl,
+            sessionApi,
+            setContext,
+            showInformationMessage,
+            showTextDocument,
+            showErrorMessage,
+            submissionWorkspace,
+            teamsStandingsProvider,
+            treeProvider,
+        });
+
+        await controller.openTeamStanding(snapshot.contest.teams[1]);
+
+        expect(fsState.writeFile).toHaveBeenCalledWith(
+            '/workspace/.autojudge-state/team-details/team-sb-bits-91cd.md',
+            expect.any(String),
+            { encoding: 'utf-8' }
+        );
+        const [, content] = fsState.writeFile.mock.calls[0];
+        expect(content).toContain('| **🏆 Rank** | **#2** |');
+        expect(content).toContain('| **✅ Solved Problems** | 1 / 2 |');
+        expect(content).toContain('> - A + B');
+        expect(content).not.toContain('> - Binary Search');
+    });
+
     it('submits the active file for the selected problem and refreshes the in-memory snapshot', async () => {
         const snapshot = createSnapshot();
         const createdSubmission = {
@@ -461,10 +577,10 @@ describe('contest controller', () => {
         expect(result).toEqual(createdSubmission);
     });
 
-    it('submits to the problem public id and keeps the numeric problem id on the local submission', async () => {
-        const snapshot = createSnapshot();
-        const publicProblem = { ...snapshot.problems[0], publicId: 'p1a2b3c4d5e6f' };
-        treeProvider.getSnapshot.mockReturnValue({ ...snapshot, problems: [publicProblem] });
+    it('submits to a public-id-only problem and keeps the public id on the local submission', async () => {
+        const snapshot = createPublicIdSnapshot();
+        const [publicProblem] = snapshot.problems;
+        treeProvider.getSnapshot.mockReturnValue(snapshot);
         submissionWorkspace.readActiveSourceFile.mockResolvedValue({
             filename: 'main.cpp',
             sourceCode: 'int main() { return 0; }\n',
@@ -490,10 +606,10 @@ describe('contest controller', () => {
         await controller.submitActiveFile(publicProblem);
 
         expect(sessionApi.submitSolution).toHaveBeenCalledWith(expect.objectContaining({
-            problemId: 'p1a2b3c4d5e6f',
+            problemId: 'pa1b2c3d4e5f6',
         }));
         expect(treeProvider.setSnapshot).toHaveBeenCalledWith(expect.objectContaining({
-            submissions: [{ id: 28, status: 'ACCEPTED', problem: { id: 1, title: 'A + B' } }],
+            submissions: [{ id: 28, status: 'ACCEPTED', problem: { publicId: 'pa1b2c3d4e5f6', title: 'A + B' } }],
         }));
     });
 
@@ -882,18 +998,25 @@ describe('contest controller', () => {
     it('keeps refreshing standings when the contest is identified only by its public id', async () => {
         vi.useFakeTimers();
 
-        const snapshot = createSnapshot();
-        const publicContest = { ...snapshot.contest, id: undefined, publicId: 'k3m9x2p7q8w1a' };
-        const liveContest = { ...publicContest, name: 'Regional Final (live)' };
-        snapshot.contest = publicContest;
-        snapshot.team = { ...snapshot.team, contest: publicContest };
+        const snapshot = createPublicIdSnapshot();
+        const [ninjas, bits] = snapshot.contest.teams;
+        const liveContest = {
+            ...snapshot.contest,
+            name: 'Regional Final (live)',
+            teams: [
+                ninjas,
+                { ...bits, score: 360000, solvedProblemIds: ['pa1b2c3d4e5f6', 'pb2c3d4e5f6a1'] },
+            ],
+        };
         promptTeamCredentials.mockResolvedValue({ password: '123456', teamId: 'teamhash9' });
         sessionApi.loginAndLoadContest.mockResolvedValue(snapshot);
         sessionApi.refreshContestDetails.mockResolvedValue(liveContest);
         treeProvider.getSnapshot.mockReturnValue(null);
+        openTextDocument.mockResolvedValue({ uri: 'file:///workspace/.autojudge-state/team-details/team-sb-ninjas-7f3a.md' });
 
         const controller = createContestController({
             context,
+            executeCommand,
             openTextDocument,
             outputChannel,
             promptTeamCredentials,
@@ -914,12 +1037,23 @@ describe('contest controller', () => {
 
         expect(sessionApi.refreshContestDetails).toHaveBeenCalledWith({
             baseUrl: 'https://api.autojudge.test',
-            contest: publicContest,
+            contest: snapshot.contest,
             context,
         });
         expect(teamsStandingsProvider.setSnapshot).toHaveBeenLastCalledWith(expect.objectContaining({
             contest: liveContest,
         }));
+
+        // Bits now leads the refreshed standings, so Array Ninjas drops to #2 in the preview.
+        await controller.openTeamStanding(liveContest.teams[0]);
+        expect(fsState.writeFile).toHaveBeenLastCalledWith(
+            '/workspace/.autojudge-state/team-details/team-sb-ninjas-7f3a.md',
+            expect.any(String),
+            { encoding: 'utf-8' }
+        );
+        const [, content] = fsState.writeFile.mock.calls.at(-1);
+        expect(content).toContain('| **🏆 Rank** | **#2** |');
+        expect(content).toContain('| **✅ Solved Problems** | 2 / 2 |');
 
         controller.dispose();
         vi.useRealTimers();

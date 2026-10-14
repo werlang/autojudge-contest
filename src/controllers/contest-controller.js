@@ -210,6 +210,7 @@ export function createContestController({
                 ...submission,
                 problem: {
                     id: problem.id,
+                    publicId: problem.publicId,
                     title: problem.title,
                 },
             };
@@ -617,8 +618,9 @@ function resolvePreviewRoot(context) {
 }
 
 /**
- * Build a stable kebab-case artifact name from the problem title.
- * @param {{ id?: string | number, title?: string }} problem
+ * Build a stable kebab-case artifact name from the problem title, falling back
+ * to the route id when the title is blank.
+ * @param {{ id?: string | number, publicId?: string, title?: string }} problem
  * @returns {string}
  */
 function toProblemArtifactName(problem) {
@@ -634,11 +636,8 @@ function toProblemArtifactName(problem) {
         return slug;
     }
 
-    if (problem?.id !== undefined && problem?.id !== null) {
-        return `problem-${problem.id}`;
-    }
-
-    return 'problem';
+    const routeId = resolveRouteId(problem);
+    return routeId != null ? `problem-${routeId}` : 'problem';
 }
 
 /**
@@ -649,7 +648,7 @@ function toProblemArtifactName(problem) {
  */
 async function ensureContestDashboardFile(context, contest) {
     const previewDirectory = join(resolvePreviewRoot(context), 'contest-dashboards');
-    const previewPath = join(previewDirectory, `contest-${contest.id}.md`);
+    const previewPath = join(previewDirectory, `contest-${resolveRouteId(contest) ?? 'unknown'}.md`);
 
     await mkdir(previewDirectory, { recursive: true });
 
@@ -688,7 +687,7 @@ async function ensureSubmissionDetailFile(context, submission) {
  */
 async function ensureTeamStandingFile(context, team, currentSnapshot) {
     const previewDirectory = join(resolvePreviewRoot(context), 'team-details');
-    const previewPath = join(previewDirectory, `team-${team.id}.md`);
+    const previewPath = join(previewDirectory, `team-${resolveRouteId(team, 'scoreboardId') ?? 'unknown'}.md`);
 
     await mkdir(previewDirectory, { recursive: true });
 

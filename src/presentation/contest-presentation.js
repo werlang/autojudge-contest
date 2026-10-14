@@ -1,5 +1,6 @@
 import { isPassedSubmission, isPendingSubmission, isTimeLimitSubmission } from '../utils/submission-status.js';
 import { extractSolvedProblemNames, normalizeStandingScore, resolveStandingTeams } from '../utils/standings.js';
+import { sameTeam } from '../utils/public-id.js';
 
 
 /**
@@ -168,7 +169,7 @@ export function renderContestDashboard(contest) {
  */
 export function renderTeamStandingDetails(team, currentSnapshot) {
     const sortedTeams = currentSnapshot?.contest ? resolveStandingTeams(currentSnapshot.contest) : [];
-    const teamIndex = sortedTeams.findIndex(t => t.id === team.id);
+    const teamIndex = sortedTeams.findIndex(entry => sameTeam(entry, team));
     const rank = teamIndex !== -1 ? teamIndex + 1 : 'Unknown';
 
     const normalizedScore = formatProblemScore(normalizeStandingScore(team));
