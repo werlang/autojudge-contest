@@ -13,7 +13,7 @@ All notable changes to this repository are documented in this file.
 ### Changed
 
 - Team login now asks for the team code printed on your team card. The code is trimmed and lowercased before it is sent, and numeric team ids are no longer accepted.
-- Contest and problem requests use the server's public ids when available, and fall back to numeric ids for older servers. Submissions and standings keep working with the existing numeric references.
+- Contest and problem requests use the server's public ids when available, and fall back to numeric ids for older servers. Submissions, solved problems, team rank, and preview file names match on `publicId`, `solvedProblemIds`, and `scoreboardId` when the server sends them, and fall back to numeric ids for older servers.
 - Problem rows in `Contest Explorer` no longer open the statement on selection; the explicit book action opens the preview while submission rows open directly.
 - Opening a problem now persists the generated markdown file under `.autojudge-contest/problem-previews/` before opening the preview.
 - Public-case export now writes `.in` and `.out` files beside the active source file instead of using a custom export destination.
