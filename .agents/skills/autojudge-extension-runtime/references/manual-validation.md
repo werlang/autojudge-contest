@@ -17,8 +17,9 @@ Use this checklist when a contest-extension runtime change cannot be fully prove
 
 1. Cancel either login prompt and confirm the extension stays logged out and does not persist a partial session.
 2. Point `autojudgeContest.baseUrl` at an invalid, unreachable, or unauthorized API and confirm the error is concise for the user while the output channel still avoids secret leakage.
-3. Simulate an expired or invalid stored session that returns `400` or `401` during restore and confirm the extension clears the saved session and resets the tree to the logged-out state.
-4. Configure a base URL that includes a base path, such as `https://example.com/api`, and confirm contest requests still resolve correctly under that path.
+3. Simulate a stored session that the server ended (`401` with `SESSION_ENDED`) during restore and confirm the extension clears the saved session, resets the tree to the logged-out state, and shows the session-ended prompt. Simulate a `400` or a `401` without `SESSION_ENDED` and confirm the saved session is kept and the error is shown.
+4. Simulate a `403` with `CONTEST_NOT_STARTED` on the problem list during restore and confirm the explorer shows the contest with **Contest has not started yet**, keeps the session, and loads problems after a refresh.
+5. Configure a base URL that includes a base path, such as `https://example.com/api`, and confirm contest requests still resolve correctly under that path.
 
 ## Explorer Command Checks
 

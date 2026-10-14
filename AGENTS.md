@@ -56,7 +56,7 @@
 - Login prompts for a 13-character team code, validated in the input box, and then a password.
 - Successful login stores the returned token in VS Code secrets and stores the team id in global state.
 - Refresh attempts to restore the stored session, loads the current team, contest details, contest problems, and submissions, and updates both sidebar views.
-- If session restore receives `400` or `401`, the stored session is cleared and the view returns to the logged-out state.
+- Only a `401` with `SESSION_ENDED` clears the stored session and returns the view to the logged-out state; other restore or standings-refresh rejections keep the token and surface the error. A `403` with `CONTEST_NOT_STARTED` keeps the token and shows the contest as not started until a refresh finds problems.
 - Both views show a login action when logged out. When logged in, `Contest Explorer` shows a highlighted contest header plus problems sorted by `order`, with only that problem's submissions nested newest-first, and `Teams Standings` shows teams sorted by score.
 - Problem rows do not open on selection. The explicit book action writes a markdown preview file under `.autojudge-contest/problem-previews` and opens it, while submission rows open the formatted submission output directly on selection.
 - Submitting the active file works from explorer problem actions, immediately merges the optimistic submission into the in-memory snapshot, then polls until a final result arrives or times out.

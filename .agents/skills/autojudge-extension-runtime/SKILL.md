@@ -30,7 +30,7 @@ Use this skill when a task changes how the contest extension authenticates a tea
 - Preserve the login flow shape unless intentionally changing it: prompt for team code first, then prompt for password.
 - Successful login must continue to store the returned token in VS Code secrets and persist the team id in global state.
 - Refresh and session restore must continue to load the current team, contest details, problems, and submissions through the contest-session path instead of duplicating fetch logic elsewhere.
-- If session restore receives `400` or `401`, clear the stored session and return the tree to the logged-out state.
+- Clear the stored session and return the tree to the logged-out state only when the server reports `SESSION_ENDED` (`401`). Other restore or standings-refresh rejections keep the token and surface the error. A `403` with `CONTEST_NOT_STARTED` keeps the token and shows the contest as not started until a refresh finds problems.
 - Preserve current interaction rules unless the task intentionally changes them: problem rows open only through the explicit action, submission rows open directly on selection, problems stay sorted by `order`, submissions stay sorted newest-first, and standings stay sorted by score descending.
 - Keep post-submit polling routed through the controller and contest-session layers so `autojudgeContest.pollIntervalMs` remains the only user-configurable verdict polling interval.
 - Keep the teams standings refresh cadence fixed at 15 seconds unless the manifest and docs are intentionally expanded to expose a new setting.
