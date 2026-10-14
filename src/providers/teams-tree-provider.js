@@ -1,5 +1,5 @@
 import { COMMANDS, TREE_CONTEXT } from '../constants.js';
-import { resolveStandingTeams } from '../utils/standings.js';
+import { countSolvedProblems, resolveStandingTeams } from '../utils/standings.js';
 
 /**
  * Provide the standings panel rendered beside the contest explorer.
@@ -93,7 +93,7 @@ function buildEmptyStandingsItem() {
  * @returns {Record<string, unknown>}
  */
 function buildStandingTeamItem(team) {
-    const solvedCount = team.solvedProblems.length;
+    const solvedCount = countSolvedProblems(team);
 
     return {
         label: team.name,

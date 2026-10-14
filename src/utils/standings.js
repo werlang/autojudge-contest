@@ -32,18 +32,31 @@ export function normalizeStandingTeam(team) {
 }
 
 /**
- * Extract the solved problem labels from one standings entry.
+ * Extract the solved problem labels from one standings entry. Matches on the
+ * `solvedProblemIds` public keys when the server sends them, otherwise on the
+ * legacy numeric `solvedProblems` list.
  * @param {object | undefined | null} team
+ * @param {object[] | undefined | null} problems
  * @returns {string[]}
  */
 export function extractSolvedProblemNames(team, problems) {
-    const rawProblems = problems ? problems.filter(problem => team?.solvedProblems?.includes(problem.id)) : []; 
+    const rawProblems = problems ? problems.filter(problem => isSolvedProblem(team, problem)) : [];
 
     return rawProblems
         .slice()
         .sort((left, right) => normalizeProblemOrder(left) - normalizeProblemOrder(right))
         .map(problem => resolveProblemName(problem))
         .filter(Boolean);
+}
+
+/**
+ * Count the problems one standings entry has solved, using the same list that
+ * `extractSolvedProblemNames` matches against.
+ * @param {object | undefined | null} team
+ * @returns {number}
+ */
+export function countSolvedProblems(team) {
+    return resolveSolvedProblemList(team).length;
 }
 
 /**
@@ -69,6 +82,34 @@ export function normalizeStandingScore(team) {
  */
 function resolveStandingTeamName(team) {
     return team?.name?.toString().trim() || `Team #${team?.id ?? '?'}`;
+}
+
+/**
+ * Check whether one contest problem is in the team's solved list. Public keys
+ * are used when `solvedProblemIds` is present, numeric ids otherwise.
+ * @param {object | undefined | null} team
+ * @param {object | undefined | null} problem
+ * @returns {boolean}
+ */
+function isSolvedProblem(team, problem) {
+    const usesPublicIds = Array.isArray(team?.solvedProblemIds);
+    const problemKey = usesPublicIds ? problem?.publicId : problem?.id;
+
+    return problemKey != null && resolveSolvedProblemList(team).includes(problemKey);
+}
+
+/**
+ * Return the solved list in the shape the server sent: public ids when
+ * `solvedProblemIds` is present, legacy numeric ids otherwise.
+ * @param {object | undefined | null} team
+ * @returns {Array<string | number>}
+ */
+function resolveSolvedProblemList(team) {
+    if (Array.isArray(team?.solvedProblemIds)) {
+        return team.solvedProblemIds;
+    }
+
+    return Array.isArray(team?.solvedProblems) ? team.solvedProblems : [];
 }
 
 /**

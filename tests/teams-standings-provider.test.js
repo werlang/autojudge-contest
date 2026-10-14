@@ -69,6 +69,43 @@ describe('teams standings provider', () => {
         ]);
     });
 
+    it('counts solved problems from solvedProblemIds when the server omits numeric ids', () => {
+        const provider = new TeamsStandingsProvider();
+
+        provider.setSnapshot({
+            problems: [],
+            submissions: [],
+            team: {
+                contest: { publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' },
+                name: 'Bits',
+            },
+            contest: {
+                publicId: 'k3m9x2p7q8w1a',
+                name: 'Regional Final',
+                teams: [
+                    {
+                        scoreboardId: 'sb-bits-91cd',
+                        name: 'Bits',
+                        score: 200000,
+                        solvedProblemIds: ['pa1b2c3d4e5f6'],
+                    },
+                    {
+                        scoreboardId: 'sb-ninjas-7f3a',
+                        name: 'Array Ninjas',
+                        score: 350000,
+                        solvedProblemIds: ['pa1b2c3d4e5f6', 'pb2c3d4e5f6a1'],
+                    },
+                ],
+            },
+            token: 'jwt-token',
+        });
+
+        expect(provider.getChildren()).toEqual([
+            expect.objectContaining({ description: '2 solved | 5.8 min', label: 'Array Ninjas' }),
+            expect.objectContaining({ description: '1 solved | 3.3 min', label: 'Bits' }),
+        ]);
+    });
+
     it('returns a placeholder row when the contest snapshot has no standings data', () => {
         const provider = new TeamsStandingsProvider();
 
