@@ -1,6 +1,7 @@
 import { clearStoredSession, readStoredSession, writeStoredSession } from './session-store.js';
 import { getContestDetails, getContestProblems, getCurrentTeam, getSubmissions, loginTeam, submitSolution as submitContestSolution } from './contest-api.js';
 import { isPendingSubmission } from '../utils/submission-status.js';
+import { resolveRouteId } from '../utils/public-id.js';
 import config from '../utils/config.js';
 
 export { clearStoredSession, readStoredSession, writeStoredSession };
@@ -61,7 +62,7 @@ export async function refreshContestDetails({ baseUrl, contest, context }) {
     try {
         const { contest: detailedContest } = await getContestDetails({
             baseUrl,
-            contestId: contest?.id,
+            contestId: resolveRouteId(contest),
             token: session.token,
         });
 
@@ -154,15 +155,16 @@ export async function pollSubmissionResult({
  */
 export async function loadContestSnapshot({ baseUrl, token }) {
     const { team } = await getCurrentTeam({ baseUrl, token });
+    const contestId = resolveRouteId(team.contest);
     const [contestResponse, problemResponse, submissionResponse] = await Promise.all([
         getContestDetails({
             baseUrl,
-            contestId: team.contest.id,
+            contestId,
             token,
         }),
         getContestProblems({
             baseUrl,
-            contestId: team.contest.id,
+            contestId,
             token,
         }),
         getSubmissions({

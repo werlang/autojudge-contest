@@ -374,3 +374,67 @@ describe('contest session flow', () => {
         vi.useRealTimers();
     });
 });
+describe('contest route ids', () => {
+    it('loads contest routes through the public id when the server returns one', async () => {
+        fetchMock
+            .mockResolvedValueOnce(jsonResponse({
+                team: {
+                    id: 9,
+                    name: 'Bits',
+                    contest: { id: 4, publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' },
+                },
+            }))
+            .mockResolvedValueOnce(jsonResponse({ contest: { id: 4, publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' } }))
+            .mockResolvedValueOnce(jsonResponse({ problems: [{ id: 1, publicId: 'p1a2b3c4d5e6f', title: 'A + B', order: 1 }] }))
+            .mockResolvedValueOnce(jsonResponse({ submissions: [] }));
+
+        const session = await import('../src/services/contest-session.js');
+        const snapshot = await session.loadContestSnapshot({
+            baseUrl: 'https://api.autojudge.test',
+            token: 'team-jwt-token',
+        });
+
+        expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://api.autojudge.test/contests/k3m9x2p7q8w1a', expect.anything());
+        expect(fetchMock).toHaveBeenNthCalledWith(3, 'https://api.autojudge.test/contests/k3m9x2p7q8w1a/problems', expect.anything());
+        expect(snapshot.problems).toEqual([{ id: 1, publicId: 'p1a2b3c4d5e6f', title: 'A + B', order: 1 }]);
+    });
+
+    it('falls back to the numeric contest id for servers that do not return a public id', async () => {
+        fetchMock
+            .mockResolvedValueOnce(jsonResponse({ team: { id: 9, name: 'Bits', contest: { id: 4, name: 'Regional Final' } } }))
+            .mockResolvedValueOnce(jsonResponse({ contest: { id: 4, name: 'Regional Final' } }))
+            .mockResolvedValueOnce(jsonResponse({ problems: [] }))
+            .mockResolvedValueOnce(jsonResponse({ submissions: [] }));
+
+        const session = await import('../src/services/contest-session.js');
+        await session.loadContestSnapshot({
+            baseUrl: 'https://api.autojudge.test',
+            token: 'team-jwt-token',
+        });
+
+        expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://api.autojudge.test/contests/4', expect.anything());
+        expect(fetchMock).toHaveBeenNthCalledWith(3, 'https://api.autojudge.test/contests/4/problems', expect.anything());
+    });
+
+    it('refreshes contest details through the public id and keeps the numeric id for older servers', async () => {
+        const session = await import('../src/services/contest-session.js');
+        const context = createContext();
+        await session.writeStoredSession(context, { teamId: 'k3m9x2p7q8w1a', token: 'team-jwt-token' });
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ contest: { id: 4, name: 'Regional Final', duration: 180 } }));
+        await session.refreshContestDetails({
+            baseUrl: 'https://api.autojudge.test',
+            contest: { id: 4, publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' },
+            context,
+        });
+        expect(fetchMock).toHaveBeenLastCalledWith('https://api.autojudge.test/contests/k3m9x2p7q8w1a', expect.anything());
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ contest: { id: 4, name: 'Regional Final', duration: 180 } }));
+        await session.refreshContestDetails({
+            baseUrl: 'https://api.autojudge.test',
+            contest: { id: 4, name: 'Regional Final' },
+            context,
+        });
+        expect(fetchMock).toHaveBeenLastCalledWith('https://api.autojudge.test/contests/4', expect.anything());
+    });
+});
