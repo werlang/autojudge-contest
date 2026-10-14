@@ -20,7 +20,7 @@ The **AutoJudge Contest** extension allows competitive programming teams to focu
 ## ✨ Features
 
 - **🔐 Simple Team Authentication**
-  Securely log in and out using your team credentials or hash. Your session is automatically saved and restored when VS Code restarts.
+  Log in through the AutoJudge website: VS Code opens your browser, you enter your team code and PIN (or confirm if you are already logged in there), and the browser sends you back to VS Code logged in. Both share the same team session, which stays valid for the whole contest and is restored when VS Code restarts.
 
 - **📖 Interactive Problem Browser**
   Read contest problems formatted in clean, readable Markdown directly inside VS Code. No web browser required.
@@ -49,7 +49,7 @@ The **AutoJudge Contest** extension allows competitive programming teams to focu
 Get ready for the contest in just a few quick steps:
 
 1. **Open the Activity Bar:** Click the **AutoJudge Contest** icon on the VS Code sidebar.
-2. **Log In:** Click **Login Team** or use the command palette. Enter your team ID or hash followed by the password.
+2. **Log In:** Click **Login Team** or use the command palette. Your browser opens the AutoJudge team login: enter the team code and PIN printed on your team card, then choose **Connect VS Code**. A team can only log in once; if you need to switch computers, ask the contest staff to reset your PIN.
 3. **Explore Problems:** In the **Contest Explorer**, expand a problem. Use the book icon (📖) to view the problem description.
 4. **Generate Testcases:** Export public cases beside your active source code file.
 5. **Submit & Monitor:** Open your solution file, click the upload icon (📤), and monitor the verdict status live under the problem node or by clicking the submission row to view detailed outputs.
@@ -62,7 +62,7 @@ Hosting your own contest? AutoJudge is completely open source. You can self-host
 
 👉 [**@werlang/autojudge**](https://github.com/werlang/autojudge)
 
-To connect the extension to your self-hosted server, update the `baseUrl` configuration setting to map your custom API address (defaults to `https://api.autojudge.io`).
+To connect the extension to your self-hosted server, set `autojudgeContest.baseUrl` to your API address (defaults to `https://api.autojudge.io`) and `autojudgeContest.webUrl` to your website address, used for the browser login (defaults to `https://autojudge.io`).
 
 ---
 
@@ -73,6 +73,7 @@ Customize the extension's behavior via your VS Code Settings:
 | Setting Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `autojudgeContest.baseUrl` | `string` | `"https://api.autojudge.io"` | Full base API URL of the AutoJudge server. Supports subpaths (e.g. `https://example.com/api`). |
+| `autojudgeContest.webUrl` | `string` | `"https://autojudge.io"` | Base URL of the AutoJudge website, opened for the browser login. |
 | `autojudgeContest.pollIntervalMs` | `number` | `5000` | The polling interval (in milliseconds) used when waiting for a submission verdict. (Min: `1000`) |
 
 *Note: The standings view automatically refreshes every 15 seconds (fixed interval).*
@@ -83,8 +84,8 @@ Customize the extension's behavior via your VS Code Settings:
 
 All core functionality is easily accessible using the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`):
 
-- **AutoJudge Contest: Login Team** (`autojudgeContest.loginTeam`) — Log in to the active contest.
-- **AutoJudge Contest: Logout Team** (`autojudgeContest.logoutTeam`) — Logs out and clears active credentials.
+- **AutoJudge Contest: Login Team** (`autojudgeContest.loginTeam`) — Opens the browser login and connects VS Code to your team session.
+- **AutoJudge Contest: Logout Team** (`autojudgeContest.logoutTeam`) — Forgets the session on this computer. The team session itself stays active; only the contest staff can end it by resetting your PIN.
 - **AutoJudge Contest: Refresh Contest Tree** (`autojudgeContest.refreshTree`) — Refreshes problems, submissions, and standings manually.
 - **AutoJudge Contest: Open Problem** (`autojudgeContest.openProblem`) — Opens the problem statement preview.
 - **AutoJudge Contest: Submit Active File** (`autojudgeContest.submitActiveFile`) — Submits the active code file to the contest.
