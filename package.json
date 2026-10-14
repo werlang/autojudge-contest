@@ -60,7 +60,7 @@
     "viewsWelcome": [
       {
         "view": "autojudgeContest.explorer",
-        "contents": "[Login Team](command:autojudgeContest.loginTeam)\n\nSign in with your AutoJudge team code to load contest problems and submissions.",
+        "contents": "[Login Team](command:autojudgeContest.loginTeam)\n\nSign in with your AutoJudge team in the browser to load contest problems and submissions.",
         "when": "autojudgeContest.state == loggedOut"
       },
       {
@@ -178,7 +178,12 @@
         "autojudgeContest.baseUrl": {
           "type": "string",
           "default": "https://api.autojudge.io",
-          "description": "Full AutoJudge API base URL used for contest team login, problem browsing, and submission polling. Defaults to https://api.autojudge.io."
+          "description": "Full AutoJudge API base URL used for contest problem browsing, submissions, and session hand-off. Defaults to https://api.autojudge.io."
+        },
+        "autojudgeContest.webUrl": {
+          "type": "string",
+          "default": "https://autojudge.io",
+          "description": "AutoJudge web app address opened in the browser to log in your team. Defaults to https://autojudge.io."
         },
         "autojudgeContest.pollIntervalMs": {
           "type": "number",
