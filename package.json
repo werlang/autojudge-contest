@@ -2,7 +2,7 @@
   "name": "autojudge-contest",
   "displayName": "AutoJudge Contest",
   "description": "Browse contest problems, inspect team standings, and submit solutions to AutoJudge contests directly from Visual Studio Code.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "autojudge",
   "license": "MIT",
   "engines": {
