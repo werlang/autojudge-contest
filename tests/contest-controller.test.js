@@ -461,6 +461,42 @@ describe('contest controller', () => {
         expect(result).toEqual(createdSubmission);
     });
 
+    it('submits to the problem public id and keeps the numeric problem id on the local submission', async () => {
+        const snapshot = createSnapshot();
+        const publicProblem = { ...snapshot.problems[0], publicId: 'p1a2b3c4d5e6f' };
+        treeProvider.getSnapshot.mockReturnValue({ ...snapshot, problems: [publicProblem] });
+        submissionWorkspace.readActiveSourceFile.mockResolvedValue({
+            filename: 'main.cpp',
+            sourceCode: 'int main() { return 0; }\n',
+        });
+        sessionApi.submitSolution.mockResolvedValue({ id: 28, status: 'ACCEPTED' });
+
+        const controller = createContestController({
+            context,
+            openTextDocument,
+            outputChannel,
+            promptTeamCredentials,
+            resolveBaseUrl,
+            sessionApi,
+            setContext,
+            showInformationMessage,
+            showTextDocument,
+            showErrorMessage,
+            submissionWorkspace,
+            teamsStandingsProvider,
+            treeProvider,
+        });
+
+        await controller.submitActiveFile(publicProblem);
+
+        expect(sessionApi.submitSolution).toHaveBeenCalledWith(expect.objectContaining({
+            problemId: 'p1a2b3c4d5e6f',
+        }));
+        expect(treeProvider.setSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+            submissions: [{ id: 28, status: 'ACCEPTED', problem: { id: 1, title: 'A + B' } }],
+        }));
+    });
+
     it('polls a pending submission until a final verdict arrives and refreshes the visible submission item', async () => {
         const snapshot = createSnapshot();
         const createdSubmission = {
@@ -838,6 +874,52 @@ describe('contest controller', () => {
             context,
         });
         expect(teamsStandingsProvider.setSnapshot).toHaveBeenLastCalledWith(refreshedSnapshot);
+
+        controller.dispose();
+        vi.useRealTimers();
+    });
+
+    it('keeps refreshing standings when the contest is identified only by its public id', async () => {
+        vi.useFakeTimers();
+
+        const snapshot = createSnapshot();
+        const publicContest = { ...snapshot.contest, id: undefined, publicId: 'k3m9x2p7q8w1a' };
+        const liveContest = { ...publicContest, name: 'Regional Final (live)' };
+        snapshot.contest = publicContest;
+        snapshot.team = { ...snapshot.team, contest: publicContest };
+        promptTeamCredentials.mockResolvedValue({ password: '123456', teamId: 'teamhash9' });
+        sessionApi.loginAndLoadContest.mockResolvedValue(snapshot);
+        sessionApi.refreshContestDetails.mockResolvedValue(liveContest);
+        treeProvider.getSnapshot.mockReturnValue(null);
+
+        const controller = createContestController({
+            context,
+            openTextDocument,
+            outputChannel,
+            promptTeamCredentials,
+            resolvePollIntervalMs,
+            resolveBaseUrl,
+            sessionApi,
+            setContext,
+            showInformationMessage,
+            showTextDocument,
+            showErrorMessage,
+            submissionWorkspace,
+            teamsStandingsProvider,
+            treeProvider,
+        });
+
+        await controller.loginTeam();
+        await vi.advanceTimersByTimeAsync(15000);
+
+        expect(sessionApi.refreshContestDetails).toHaveBeenCalledWith({
+            baseUrl: 'https://api.autojudge.test',
+            contest: publicContest,
+            context,
+        });
+        expect(teamsStandingsProvider.setSnapshot).toHaveBeenLastCalledWith(expect.objectContaining({
+            contest: liveContest,
+        }));
 
         controller.dispose();
         vi.useRealTimers();

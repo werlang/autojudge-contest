@@ -10,6 +10,7 @@ import {
     renderTeamStandingDetails,
 } from '../presentation/contest-presentation.js';
 import { isPendingSubmission } from '../utils/submission-status.js';
+import { resolveRouteId } from '../utils/public-id.js';
 import { extractSolvedProblemNames, normalizeStandingScore } from '../utils/standings.js';
 import { extractPublicCases } from '../workspace/contest-public-cases.js';
 import { TEAM_PANEL_REFRESH_INTERVAL_MS } from '../utils/config.js';
@@ -121,7 +122,7 @@ export function createContestController({
             return;
         }
 
-        if (!currentSnapshot?.contest?.id) {
+        if (!resolveRouteId(currentSnapshot?.contest)) {
             return;
         }
 
@@ -171,7 +172,7 @@ export function createContestController({
     const syncTeamsRefreshTimer = (snapshot) => {
         clearTeamsRefreshTimer();
 
-        if (!snapshot?.contest?.id || typeof sessionApi.refreshContestDetails !== 'function') {
+        if (!resolveRouteId(snapshot?.contest) || typeof sessionApi.refreshContestDetails !== 'function') {
             return;
         }
 
@@ -441,7 +442,7 @@ export function createContestController({
                     code: encodeSourceCode(activeSource.sourceCode),
                     context,
                     filename: activeSource.filename,
-                    problemId: selectedProblem.id,
+                    problemId: resolveRouteId(selectedProblem),
                 });
 
                 await mergeSubmissionIntoSnapshot(selectedProblem, submission);
