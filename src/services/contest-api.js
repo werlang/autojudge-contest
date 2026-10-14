@@ -15,6 +15,16 @@ export function normalizeBaseUrl(value) {
 }
 
 /**
+ * Normalize a team code typed at login. Team public ids are lowercase base36,
+ * so surrounding whitespace is trimmed and letters are lowercased before use.
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function normalizeTeamCode(value) {
+    return String(value ?? '').trim().toLowerCase();
+}
+
+/**
  * Exchange a team password for a contest team JWT.
  * @param {{ baseUrl: string, password: string, teamId: string, signal?: AbortSignal }} options
  * @returns {Promise<{ token: string }>}
@@ -22,7 +32,7 @@ export function normalizeBaseUrl(value) {
 export async function loginTeam({ baseUrl, password, teamId, signal }) {
     return requestJson({
         baseUrl,
-        endpoint: `teams/${encodeURIComponent(teamId)}/login`,
+        endpoint: `teams/${encodeURIComponent(normalizeTeamCode(teamId))}/login`,
         headers: {
             Authorization: `Bearer ${password}`,
         },
