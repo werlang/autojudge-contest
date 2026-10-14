@@ -245,6 +245,17 @@ describe('BrowserLogin', () => {
         expect(login.pending).toBeNull();
     });
 
+    it('ends the pending login and its timeout when opening the browser throws', async () => {
+        openExternal.mockRejectedValue(new Error('No browser available.'));
+
+        await expect(login.waitForHandoffCode()).rejects.toMatchObject({
+            message: 'Could not open the browser to log in.',
+            reason: LOGIN_FAILURE.OPEN_FAILED,
+        });
+        expect(login.pending).toBeNull();
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
     it('fails before opening anything when the web URL setting is invalid', async () => {
         login = new BrowserLogin({ openExternal, resolveWebUrl: () => 'ftp://autojudge.io' });
 

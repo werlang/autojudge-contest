@@ -138,7 +138,16 @@ export class BrowserLogin {
             this.#end(new BrowserLoginError(LOGIN_FAILURE.CANCELLED, 'Login cancelled.'), pending);
         });
 
-        const opened = await this.openExternal(url);
+        let opened;
+        try {
+            opened = await this.openExternal(url);
+        }
+        catch {
+            // A browser that cannot be started fails the login like a refused open,
+            // so the pending state and its timeout do not outlive this call.
+            opened = false;
+        }
+
         if (opened === false) {
             this.#end(new BrowserLoginError(LOGIN_FAILURE.OPEN_FAILED, 'Could not open the browser to log in.'), pending);
         }

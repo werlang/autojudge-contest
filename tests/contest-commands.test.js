@@ -165,6 +165,21 @@ describe('browser team login', () => {
         expect(vscodeState.showErrorMessage).not.toHaveBeenCalled();
     });
 
+    it('shows an error and ends the login when the browser cannot be opened', async () => {
+        vscodeState.openExternal.mockRejectedValue(new Error('No browser available.'));
+        const { loginCommand, uriHandler } = registerLogin();
+
+        await loginCommand();
+
+        expect(vscodeState.showErrorMessage).toHaveBeenCalledWith('Could not open the browser to log in.');
+        expect(outputChannel.appendLine).toHaveBeenCalledWith('ERROR: Could not open the browser to log in.');
+
+        // The login is over, so a callback that arrives later has nothing to match.
+        uriHandler.handleUri({ path: '/auth', query: 'code=handoff-code&state=late' });
+        expect(vscodeState.showErrorMessage).toHaveBeenLastCalledWith('No login in progress. Run Login Team again.');
+        expect(contestSession.redeemAndLoadContest).not.toHaveBeenCalled();
+    });
+
     it('tells the user when a callback arrives with no login in progress and does not redeem it', () => {
         const { uriHandler } = registerLogin();
 
