@@ -153,7 +153,7 @@ export class ContestTreeProvider {
                     arguments: [this.snapshot.contest],
                 },
             },
-            ...problemItems,
+            ...(this.snapshot.contestNotStarted ? [buildNotStartedItem()] : problemItems),
         ];
     }
 
@@ -194,6 +194,20 @@ function getSubmissionIcon(status) {
     }
 
     return new vscode.ThemeIcon('error', new vscode.ThemeColor('testing.iconFailed'));
+}
+
+/**
+ * Build the explorer note shown in place of the problems until the contest starts.
+ * It has no command because there is nothing to open yet; refresh loads the problems.
+ * @returns {Record<string, unknown>}
+ */
+function buildNotStartedItem() {
+    return {
+        label: 'Contest has not started yet',
+        description: 'Refresh when it starts',
+        collapsibleState: 0,
+        iconPath: new vscode.ThemeIcon('clock'),
+    };
 }
 
 /**

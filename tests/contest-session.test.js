@@ -190,6 +190,7 @@ describe('contest session flow', () => {
                     },
                 ],
             },
+            contestNotStarted: false,
             token: 'team-jwt-token',
         });
 
@@ -258,6 +259,82 @@ describe('contest session flow', () => {
 
         expect(await session.readStoredSession(context)).toBeNull();
         expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the session and marks the contest not started when problems are refused before the start', async () => {
+        const context = createContext();
+        const session = await import('../src/services/contest-session.js');
+
+        await session.writeStoredSession(context, { token: 'team-jwt-token' });
+        fetchMock
+            .mockResolvedValueOnce(jsonResponse({
+                team: {
+                    publicId: 'tbits91cd0000',
+                    name: 'Bits',
+                    contest: { publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' },
+                },
+            }))
+            .mockResolvedValueOnce(jsonResponse({
+                contest: { publicId: 'k3m9x2p7q8w1a', name: 'Regional Final', problems: [], startTime: '2026-05-29T09:00:00.000Z' },
+            }))
+            .mockResolvedValueOnce(jsonResponse({
+                code: 'CONTEST_NOT_STARTED',
+                message: 'The contest has not started yet.',
+            }, 403))
+            .mockResolvedValueOnce(jsonResponse({ submissions: [] }));
+
+        const restored = await session.restoreContestSession({
+            baseUrl: 'https://api.autojudge.test',
+            context,
+        });
+
+        expect(restored).toMatchObject({
+            contest: { name: 'Regional Final' },
+            contestNotStarted: true,
+            problems: [],
+            submissions: [],
+            token: 'team-jwt-token',
+        });
+        expect(await session.readStoredSession(context)).toEqual({ token: 'team-jwt-token' });
+    });
+
+    it('rejects a problems refusal that is not CONTEST_NOT_STARTED', async () => {
+        const context = createContext();
+        const session = await import('../src/services/contest-session.js');
+
+        await session.writeStoredSession(context, { token: 'team-jwt-token' });
+        fetchMock
+            .mockResolvedValueOnce(jsonResponse({
+                team: { publicId: 'tbits91cd0000', name: 'Bits', contest: { publicId: 'k3m9x2p7q8w1a' } },
+            }))
+            .mockResolvedValueOnce(jsonResponse({ contest: { publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' } }))
+            .mockResolvedValueOnce(jsonResponse({ code: 'FORBIDDEN', message: 'Not allowed.' }, 403))
+            .mockResolvedValueOnce(jsonResponse({ submissions: [] }));
+
+        await expect(session.restoreContestSession({
+            baseUrl: 'https://api.autojudge.test',
+            context,
+        })).rejects.toMatchObject({ code: 'FORBIDDEN', statusCode: 403 });
+        expect(await session.readStoredSession(context)).toEqual({ token: 'team-jwt-token' });
+    });
+
+    it('keeps the stored token and returns the current contest when a standings refresh is refused before the start', async () => {
+        const context = createContext();
+        const session = await import('../src/services/contest-session.js');
+
+        await session.writeStoredSession(context, { token: 'team-jwt-token' });
+        fetchMock.mockResolvedValueOnce(jsonResponse({
+            code: 'CONTEST_NOT_STARTED',
+            message: 'The contest has not started yet.',
+        }, 403));
+
+        const contest = { publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' };
+        await expect(session.refreshContestDetails({
+            baseUrl: 'https://api.autojudge.test',
+            contest,
+            context,
+        })).resolves.toBe(contest);
+        expect(await session.readStoredSession(context)).toEqual({ token: 'team-jwt-token' });
     });
 
     it('reports SESSION_ENDED on restore so the caller can clear the token and tell the user', async () => {

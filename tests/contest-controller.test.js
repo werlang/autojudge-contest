@@ -387,6 +387,21 @@ describe('contest controller', () => {
         expect(result).toEqual(snapshot);
     });
 
+    it('keeps the session and reports a contest that has not started yet on refresh', async () => {
+        const snapshot = { ...createSnapshot(), problems: [], contestNotStarted: true };
+        sessionApi.restoreContestSession.mockResolvedValue(snapshot);
+
+        const result = await buildController().refreshTree();
+
+        expect(result).toEqual(snapshot);
+        expect(treeProvider.setSnapshot).toHaveBeenCalledWith(snapshot);
+        expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'loggedIn');
+        expect(outputChannel.appendLine).toHaveBeenCalledWith('The contest has not started yet. Refresh once it starts to load the problems.');
+        expect(sessionApi.clearStoredSession).not.toHaveBeenCalled();
+        expect(showErrorMessage).not.toHaveBeenCalled();
+        expect(showWarningMessage).not.toHaveBeenCalled();
+    });
+
     it('logs out by clearing storage and resetting the tree', async () => {
         const controller = createContestController({
             context,

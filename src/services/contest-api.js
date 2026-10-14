@@ -11,6 +11,12 @@ export const SESSION_ENDED_CODE = 'SESSION_ENDED';
 export const HANDOFF_INVALID_CODE = 'HANDOFF_INVALID';
 
 /**
+ * Error code the server sends (with 403) for contest problems before the contest
+ * starts. The team session is still valid, so it is kept.
+ */
+export const CONTEST_NOT_STARTED_CODE = 'CONTEST_NOT_STARTED';
+
+/**
  * Normalize the contest API base URL while preserving optional base paths.
  * @param {string} value
  * @returns {string}
@@ -69,6 +75,15 @@ export async function getCurrentTeam({ baseUrl, token, signal }) {
         method: 'GET',
         signal,
     });
+}
+
+/**
+ * Check whether a failed request only means the contest has not started yet.
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+export function isContestNotStarted(error) {
+    return error?.statusCode === 403 && error?.code === CONTEST_NOT_STARTED_CODE;
 }
 
 /**

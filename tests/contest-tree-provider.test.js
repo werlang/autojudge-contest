@@ -192,4 +192,29 @@ describe('contest tree provider', () => {
 
         provider.dispose();
     });
+
+    it('shows a not-started note instead of problems while the contest has not started', () => {
+        const provider = new ContestTreeProvider();
+
+        provider.setSnapshot({
+            problems: [],
+            contestNotStarted: true,
+            submissions: [],
+            team: { name: 'Bits', contest: { publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' } },
+            contest: { publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' },
+            token: 'jwt-token',
+        });
+
+        const rootChildren = provider.getChildren();
+
+        expect(rootChildren).toEqual([
+            expect.objectContaining({ label: 'REGIONAL FINAL' }),
+            expect.objectContaining({
+                description: 'Refresh when it starts',
+                label: 'Contest has not started yet',
+            }),
+        ]);
+        expect(rootChildren[1].command).toBeUndefined();
+        expect(rootChildren[1].contextValue).toBeUndefined();
+    });
 });

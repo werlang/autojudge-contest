@@ -1,5 +1,5 @@
 import { clearStoredSession, readStoredSession, writeStoredSession } from './session-store.js';
-import { getContestDetails, getContestProblems, getCurrentTeam, getSubmissions, redeemHandoffCode, submitSolution as submitContestSolution } from './contest-api.js';
+import { getContestDetails, getContestProblems, getCurrentTeam, getSubmissions, isContestNotStarted, redeemHandoffCode, submitSolution as submitContestSolution } from './contest-api.js';
 import { isPendingSubmission } from '../utils/submission-status.js';
 import { resolveRouteId } from '../utils/public-id.js';
 import config from '../utils/config.js';
@@ -53,13 +53,23 @@ export async function refreshContestDetails({ baseUrl, contest, context }) {
         return null;
     }
 
-    const { contest: detailedContest } = await getContestDetails({
-        baseUrl,
-        contestId: resolveRouteId(contest),
-        token: session.token,
-    });
+    try {
+        const { contest: detailedContest } = await getContestDetails({
+            baseUrl,
+            contestId: resolveRouteId(contest),
+            token: session.token,
+        });
 
-    return mergeContestSnapshot(contest, detailedContest);
+        return mergeContestSnapshot(contest, detailedContest);
+    }
+    catch (error) {
+        // Not started yet: the session is still valid, so keep the snapshot as it is.
+        if (isContestNotStarted(error)) {
+            return contest;
+        }
+
+        throw error;
+    }
 }
 
 /**
@@ -133,13 +143,17 @@ export async function pollSubmissionResult({
 }
 
 /**
- * Load the authenticated team, contest problems, and submission history.
+ * Load the authenticated team, contest problems, and submission history. Before
+ * the contest starts the server refuses the problem list with
+ * `CONTEST_NOT_STARTED`; the snapshot is then returned with no problems and
+ * `contestNotStarted` set, so the session is kept and can be refreshed later.
  * @param {{ baseUrl: string, token: string }} options
- * @returns {Promise<{ token: string, team: object, problems: object[], submissions: object[] }>}
+ * @returns {Promise<{ token: string, team: object, problems: object[], submissions: object[], contestNotStarted: boolean }>}
  */
 export async function loadContestSnapshot({ baseUrl, token }) {
     const { team } = await getCurrentTeam({ baseUrl, token });
     const contestId = resolveRouteId(team.contest);
+    let contestNotStarted = false;
     const [contestResponse, problemResponse, submissionResponse] = await Promise.all([
         getContestDetails({
             baseUrl,
@@ -150,6 +164,13 @@ export async function loadContestSnapshot({ baseUrl, token }) {
             baseUrl,
             contestId,
             token,
+        }).catch((error) => {
+            if (!isContestNotStarted(error)) {
+                throw error;
+            }
+
+            contestNotStarted = true;
+            return { problems: [] };
         }),
         getSubmissions({
             baseUrl,
@@ -164,6 +185,7 @@ export async function loadContestSnapshot({ baseUrl, token }) {
             ...team,
         },
         contest: mergeContestSnapshot(team.contest, contestResponse.contest),
+        contestNotStarted,
         token,
     };
 }

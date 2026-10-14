@@ -23,6 +23,7 @@ const LOGIN_ACTION_LABEL = 'Log in';
 const WAITING_FOR_BROWSER_MESSAGE = 'Waiting for you to log in in the browser…';
 const SESSION_ENDED_MESSAGE = 'Your session ended. Log in again (ask staff to reset your PIN if needed).';
 const HANDOFF_INVALID_MESSAGE = 'The browser login link expired or was already used. Run Login Team again.';
+const CONTEST_NOT_STARTED_MESSAGE = 'The contest has not started yet. Refresh once it starts to load the problems.';
 
 /**
  * Create the orchestrator that bridges VS Code command handlers to the contest
@@ -567,6 +568,10 @@ export function createContestController({
                 if (snapshot) {
                     sessionEndedPromptShown = false;
                     outputChannel.appendLine(`Loaded ${snapshot.contest.name.trim()} for ${snapshot.team.name}.`);
+                }
+                if (snapshot?.contestNotStarted) {
+                    // The session is kept; the tree shows the contest as not started until a refresh finds problems.
+                    outputChannel.appendLine(CONTEST_NOT_STARTED_MESSAGE);
                 }
                 return await syncTreeState(snapshot);
             }
