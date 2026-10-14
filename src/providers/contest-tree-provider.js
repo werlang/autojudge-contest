@@ -4,6 +4,7 @@ import {
     formatSubmissionStatus,
 } from '../presentation/contest-presentation.js';
 import { COMMANDS, TREE_CONTEXT } from '../constants.js';
+import { sameEntity } from '../utils/public-id.js';
 import {
     isErrorSubmission,
     isFailedSubmission,
@@ -110,7 +111,7 @@ export class ContestTreeProvider {
             .sort((left, right) => (left.order ?? Number.MAX_SAFE_INTEGER) - (right.order ?? Number.MAX_SAFE_INTEGER))
             .map(problem => {
                 const submissions = this.snapshot.submissions
-                    .filter(submission => submission.problem?.id === problem.id)
+                    .filter(submission => sameEntity(submission.problem, problem))
                     .sort((left, right) => new Date(right.submittedAt).getTime() - new Date(left.submittedAt).getTime())
                     .map(submission => ({
                         label: `#${submission.id}`,

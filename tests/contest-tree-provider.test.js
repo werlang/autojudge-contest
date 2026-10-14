@@ -119,6 +119,50 @@ describe('contest tree provider', () => {
         ]);
     });
 
+    it('groups submissions by problem public id when the server omits numeric ids', () => {
+        const provider = new ContestTreeProvider();
+
+        provider.setSnapshot({
+            problems: [
+                { publicId: 'pa1b2c3d4e5f6', order: 1, title: 'A + B' },
+                { publicId: 'pb2c3d4e5f6a1', order: 2, title: 'Binary Search' },
+            ],
+            submissions: [
+                {
+                    id: 11,
+                    status: 'WRONG_ANSWER',
+                    submittedAt: '2026-05-28T03:00:00.000Z',
+                    problem: { publicId: 'pa1b2c3d4e5f6', title: 'A + B' },
+                },
+                {
+                    id: 12,
+                    status: 'ACCEPTED',
+                    submittedAt: '2026-05-28T03:10:00.000Z',
+                    problem: { publicId: 'pa1b2c3d4e5f6', title: 'A + B' },
+                },
+                {
+                    id: 13,
+                    status: 'ACCEPTED',
+                    submittedAt: '2026-05-28T03:20:00.000Z',
+                    problem: { title: 'Orphaned' },
+                },
+            ],
+            team: {
+                contest: { publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' },
+                name: 'Bits',
+            },
+            contest: { publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' },
+            token: 'jwt-token',
+        });
+
+        const rootChildren = provider.getChildren();
+
+        expect(rootChildren[1]).toEqual(expect.objectContaining({ description: '2 submissions', label: 'A + B' }));
+        expect(rootChildren[2]).toEqual(expect.objectContaining({ description: '0 submissions', label: 'Binary Search' }));
+        expect(provider.getChildren(rootChildren[1]).map(child => child.label)).toEqual(['#12', '#11']);
+        expect(provider.getChildren(rootChildren[2])).toEqual([]);
+    });
+
     it('sets the snapshot and renders the contest header without countdown tickers', () => {
         const provider = new ContestTreeProvider();
         const listener = vi.fn();
