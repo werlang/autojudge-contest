@@ -52,7 +52,7 @@
 ## Runtime Behavior To Preserve
 
 - The contributed commands are `autojudgeContest.loginTeam`, `autojudgeContest.logoutTeam`, `autojudgeContest.refreshTree`, `autojudgeContest.openProblem`, `autojudgeContest.submitActiveFile`, `autojudgeContest.exportPublicCases`, `autojudgeContest.openSubmission`, and `autojudgeContest.openTeamStanding`.
-- Login prompts for a team id or hash and then a password.
+- Login prompts for a team code (public id or legacy hash) and then a password.
 - Successful login stores the returned token in VS Code secrets and stores the team id in global state.
 - Refresh attempts to restore the stored session, loads the current team, contest details, contest problems, and submissions, and updates both sidebar views.
 - If session restore receives `400` or `401`, the stored session is cleared and the view returns to the logged-out state.

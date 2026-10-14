@@ -27,7 +27,7 @@ Use this skill when a task changes how the contest extension authenticates a tea
 ## Runtime Contract
 
 - Preserve the current command surface unless the task explicitly changes the manifest: `autojudgeContest.loginTeam`, `autojudgeContest.logoutTeam`, `autojudgeContest.refreshTree`, `autojudgeContest.openProblem`, `autojudgeContest.submitActiveFile`, `autojudgeContest.exportPublicCases`, `autojudgeContest.openSubmission`, and `autojudgeContest.openTeamStanding`.
-- Preserve the login flow shape unless intentionally changing it: prompt for team id or hash first, then prompt for password.
+- Preserve the login flow shape unless intentionally changing it: prompt for team code first, then prompt for password.
 - Successful login must continue to store the returned token in VS Code secrets and persist the team id in global state.
 - Refresh and session restore must continue to load the current team, contest details, problems, and submissions through the contest-session path instead of duplicating fetch logic elsewhere.
 - If session restore receives `400` or `401`, clear the stored session and return the tree to the logged-out state.

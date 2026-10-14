@@ -60,7 +60,7 @@
     "viewsWelcome": [
       {
         "view": "autojudgeContest.explorer",
-        "contents": "[Login Team](command:autojudgeContest.loginTeam)\n\nSign in with your AutoJudge team id or hash to load contest problems and submissions.",
+        "contents": "[Login Team](command:autojudgeContest.loginTeam)\n\nSign in with your AutoJudge team code to load contest problems and submissions.",
         "when": "autojudgeContest.state == loggedOut"
       },
       {

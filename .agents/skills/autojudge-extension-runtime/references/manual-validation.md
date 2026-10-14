@@ -7,7 +7,7 @@ Use this checklist when a contest-extension runtime change cannot be fully prove
 1. Launch the extension in an Extension Development Host.
 2. Open the `AutoJudge Contest` activity-bar container and confirm the `Contest Explorer` view loads.
 3. In the logged-out state, confirm the view shows the `Login Team` welcome action and the view title also exposes the same login command.
-4. Run `AutoJudge Contest: Login Team`, enter a valid team id or hash plus password, and confirm the login completes.
+4. Run `AutoJudge Contest: Login Team`, enter a valid team code plus password, and confirm the login completes.
 5. Inspect the `AutoJudge Contest` output channel and confirm login or refresh messages are helpful but do not expose passwords, tokens, or raw authorization headers.
 6. Confirm the logged-in tree shows the contest header, problems sorted by `order`, and each problem's submissions nested beneath that problem and sorted newest-first.
 7. Run `AutoJudge Contest: Refresh Contest Tree` and confirm the current snapshot reloads cleanly without duplicating nodes or leaving stale state behind.
