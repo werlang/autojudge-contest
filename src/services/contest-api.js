@@ -1,3 +1,10 @@
+const TEAM_CODE_PATTERN = /^[0-9a-z]{13}$/;
+
+/**
+ * Explain the accepted team code format in the login input box and in errors.
+ */
+export const TEAM_CODE_MESSAGE = 'Enter the 13-character team code printed on your team card, using letters a-z and digits 0-9.';
+
 /**
  * Normalize the contest API base URL while preserving optional base paths.
  * @param {string} value
@@ -25,11 +32,27 @@ export function normalizeTeamCode(value) {
 }
 
 /**
- * Exchange a team password for a contest team JWT.
+ * Check whether a typed team code is a 13-character public id after trimming
+ * and lowercasing. Anything else, including older six-character team hashes, is
+ * rejected.
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+export function isTeamCode(value) {
+    return TEAM_CODE_PATTERN.test(normalizeTeamCode(value));
+}
+
+/**
+ * Exchange a team password for a contest team JWT. Rejects any team code that is
+ * not a 13-character public id before the request is sent.
  * @param {{ baseUrl: string, password: string, teamId: string, signal?: AbortSignal }} options
  * @returns {Promise<{ token: string }>}
  */
 export async function loginTeam({ baseUrl, password, teamId, signal }) {
+    if (!isTeamCode(teamId)) {
+        throw new Error(TEAM_CODE_MESSAGE);
+    }
+
     return requestJson({
         baseUrl,
         endpoint: `teams/${encodeURIComponent(normalizeTeamCode(teamId))}/login`,

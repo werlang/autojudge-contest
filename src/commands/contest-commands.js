@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { createContestController } from '../controllers/contest-controller.js';
 import { COMMANDS } from '../constants.js';
 import * as contestSession from '../services/contest-session.js';
-import { normalizeTeamCode } from '../services/contest-api.js';
+import { isTeamCode, normalizeTeamCode, TEAM_CODE_MESSAGE } from '../services/contest-api.js';
 import { ContestSubmissionWorkspace } from '../workspace/contest-submission-workspace.js';
 import config from '../utils/config.js';
 
@@ -29,10 +29,11 @@ export function registerContestCommands({ context, teamsStandingsProvider, treeP
                 placeHolder: 'team-code',
                 prompt: 'Enter your AutoJudge team code (printed on your team card).',
                 title: 'AutoJudge Contest Login',
+                validateInput: (value) => (isTeamCode(value) ? null : TEAM_CODE_MESSAGE),
             });
             const teamId = normalizeTeamCode(teamInput);
 
-            if (!teamId) {
+            if (!isTeamCode(teamId)) {
                 return null;
             }
 

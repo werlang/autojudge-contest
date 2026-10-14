@@ -84,6 +84,18 @@ describe('team login prompt', () => {
         }));
     });
 
+    it('validates the team code in the input box and rejects a legacy six-character hash', async () => {
+        const loginCommand = registerLoginCommand();
+        vscodeState.showInputBox.mockResolvedValueOnce('ab12cd');
+
+        await loginCommand();
+
+        const { validateInput } = vscodeState.showInputBox.mock.calls[0][0];
+        expect(validateInput('ab12cd')).toMatch(/13-character team code/);
+        expect(validateInput('  K3M9X2P7Q8W1A ')).toBeNull();
+        expect(contestSession.loginAndLoadContest).not.toHaveBeenCalled();
+    });
+
     it('cancels the login when the team code is blank after trimming', async () => {
         const loginCommand = registerLoginCommand();
         vscodeState.showInputBox.mockResolvedValueOnce('   ');

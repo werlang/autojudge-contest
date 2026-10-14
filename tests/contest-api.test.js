@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loginTeam, normalizeTeamCode } from '../src/services/contest-api.js';
+import { isTeamCode, loginTeam, normalizeTeamCode } from '../src/services/contest-api.js';
 
 const fetchMock = vi.fn();
 
@@ -24,13 +24,30 @@ describe('normalizeTeamCode', () => {
         expect(normalizeTeamCode('  K3M9X2P7Q8W1A\n')).toBe('k3m9x2p7q8w1a');
     });
 
-    it('lowercases the legacy six-character team hash', () => {
-        expect(normalizeTeamCode('AB12CD')).toBe('ab12cd');
-    });
-
     it('returns an empty string for blank or missing input', () => {
         expect(normalizeTeamCode('   ')).toBe('');
         expect(normalizeTeamCode(undefined)).toBe('');
+    });
+});
+
+describe('isTeamCode', () => {
+    it('accepts a 13-character public id once trimmed and lowercased', () => {
+        expect(isTeamCode('k3m9x2p7q8w1a')).toBe(true);
+        expect(isTeamCode('  K3M9X2P7Q8W1A ')).toBe(true);
+    });
+
+    it('rejects the legacy six-character team hash', () => {
+        expect(isTeamCode('ab12cd')).toBe(false);
+        expect(isTeamCode(' AB12CD ')).toBe(false);
+    });
+
+    it('rejects codes that are not exactly 13 letters or digits', () => {
+        expect(isTeamCode('k3m9x2p7q8w1')).toBe(false);
+        expect(isTeamCode('k3m9x2p7q8w1ab')).toBe(false);
+        expect(isTeamCode('k3m9x2p7-8w1a')).toBe(false);
+        expect(isTeamCode('k3m9x2p7q8w1é')).toBe(false);
+        expect(isTeamCode('')).toBe(false);
+        expect(isTeamCode(undefined)).toBe(false);
     });
 });
 
@@ -48,5 +65,15 @@ describe('loginTeam', () => {
                 Authorization: 'Bearer 123456',
             }),
         }));
+    });
+
+    it('rejects a legacy six-character team hash without contacting the server', async () => {
+        await expect(loginTeam({
+            baseUrl: 'https://api.autojudge.test',
+            password: '123456',
+            teamId: 'ab12cd',
+        })).rejects.toThrow('Enter the 13-character team code');
+
+        expect(fetchMock).not.toHaveBeenCalled();
     });
 });
