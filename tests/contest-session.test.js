@@ -67,7 +67,7 @@ describe('contest session flow', () => {
             .mockResolvedValueOnce(jsonResponse({ token: 'team-jwt-token' }))
             .mockResolvedValueOnce(jsonResponse({
                 team: {
-                    scoreboardId: 'sb-bits-91cd',
+                    publicId: 'tbits91cd0000',
                     name: 'Bits',
                     contest: {
                         publicId: 'k3m9x2p7q8w1a',
@@ -86,13 +86,13 @@ describe('contest session flow', () => {
                     startTime: '2026-05-29T09:00:00.000Z',
                     teams: [
                         {
-                            scoreboardId: 'sb-bits-91cd',
+                            publicId: 'tbits91cd0000',
                             name: 'Bits',
                             score: 200,
                             solvedProblemIds: ['pa1b2c3d4e5f6'],
                         },
                         {
-                            scoreboardId: 'sb-ninjas-7f3a',
+                            publicId: 'tninjas7f3a00',
                             name: 'Array Ninjas',
                             score: 350,
                             solvedProblemIds: ['pa1b2c3d4e5f6', 'pb2c3d4e5f6a1'],
@@ -157,7 +157,7 @@ describe('contest session flow', () => {
                 { id: 22, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6', title: 'A + B' } },
             ],
             team: {
-                scoreboardId: 'sb-bits-91cd',
+                publicId: 'tbits91cd0000',
                 name: 'Bits',
                 contest: {
                     description: 'Regional ICPC warm-up',
@@ -176,13 +176,13 @@ describe('contest session flow', () => {
                 startTime: '2026-05-29T09:00:00.000Z',
                 teams: [
                     {
-                        scoreboardId: 'sb-bits-91cd',
+                        publicId: 'tbits91cd0000',
                         name: 'Bits',
                         score: 200,
                         solvedProblemIds: ['pa1b2c3d4e5f6'],
                     },
                     {
-                        scoreboardId: 'sb-ninjas-7f3a',
+                        publicId: 'tninjas7f3a00',
                         name: 'Array Ninjas',
                         score: 350,
                         solvedProblemIds: ['pa1b2c3d4e5f6', 'pb2c3d4e5f6a1'],
@@ -367,7 +367,7 @@ describe('contest route ids', () => {
         fetchMock
             .mockResolvedValueOnce(jsonResponse({
                 team: {
-                    scoreboardId: 'sb-bits-91cd',
+                    publicId: 'tbits91cd0000',
                     name: 'Bits',
                     contest: { publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' },
                 },

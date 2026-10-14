@@ -1,7 +1,6 @@
 /**
- * Choose the identifier placed in an API route for a contest, problem, or team.
- * Only public keys are routable: `publicId` for contests and problems, and
- * `scoreboardId` for teams (pass `'scoreboardId'` as `idKey`).
+ * Choose the identifier placed in an API route (or a generated file name) for a
+ * contest, problem, or team. Only `publicId` is routable.
  * @param {object | undefined | null} entity
  * @param {string} [idKey='publicId'] field that holds the public key
  * @returns {string | null}
@@ -23,13 +22,13 @@ export function sameEntity(left, right) {
 
 /**
  * Decide whether two standings entries point at the same team by comparing
- * `scoreboardId`. Missing scoreboard ids never match each other.
+ * `publicId`. Missing public ids never match each other.
  * @param {object | undefined | null} left
  * @param {object | undefined | null} right
  * @returns {boolean}
  */
 export function sameTeam(left, right) {
-    return sharesPublicKey(left, right, 'scoreboardId');
+    return sharesPublicKey(left, right, 'publicId');
 }
 
 /**

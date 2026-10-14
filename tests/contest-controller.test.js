@@ -28,7 +28,7 @@ async function flushPromises(turns = 10) {
 
 /**
  * Build a snapshot with the only shape the server sends: publicId on contests
- * and problems, solvedProblemIds and scoreboardId on teams, and no numeric ids.
+ * and problems, solvedProblemIds and publicId on teams, and no numeric ids.
  * @returns {object}
  */
 function createSnapshot() {
@@ -45,13 +45,13 @@ function createSnapshot() {
         teams: [
             {
                 name: 'Array Ninjas',
-                scoreboardId: 'sb-ninjas-7f3a',
+                publicId: 'tninjas7f3a00',
                 score: 350000,
                 solvedProblemIds: ['pa1b2c3d4e5f6', 'pb2c3d4e5f6a1'],
             },
             {
                 name: 'Bits',
-                scoreboardId: 'sb-bits-91cd',
+                publicId: 'tbits91cd0000',
                 score: 200000,
                 solvedProblemIds: ['pa1b2c3d4e5f6'],
             },
@@ -64,7 +64,7 @@ function createSnapshot() {
         team: {
             contest,
             name: 'Bits',
-            scoreboardId: 'sb-bits-91cd',
+            publicId: 'tbits91cd0000',
         },
         contest,
         token: 'team-jwt-token',
@@ -370,7 +370,7 @@ describe('contest controller', () => {
     it('opens a team standing preview from the clicked standing item', async () => {
         const snapshot = createSnapshot();
         treeProvider.getSnapshot.mockReturnValue(snapshot);
-        const document = { uri: 'file:///workspace/.autojudge-state/team-details/team-sb-ninjas-7f3a.md' };
+        const document = { uri: 'file:///workspace/.autojudge-state/team-details/team-tninjas7f3a00.md' };
         openTextDocument.mockResolvedValue(document);
 
         const controller = createContestController({
@@ -399,19 +399,19 @@ describe('contest controller', () => {
             recursive: true,
         });
         expect(fsState.writeFile).toHaveBeenCalledWith(
-            '/workspace/.autojudge-state/team-details/team-sb-ninjas-7f3a.md',
+            '/workspace/.autojudge-state/team-details/team-tninjas7f3a00.md',
             expect.stringContaining('# 👥 Team Standing: Array Ninjas'),
             { encoding: 'utf-8' }
         );
-        expect(openTextDocument).toHaveBeenCalledWith('/workspace/.autojudge-state/team-details/team-sb-ninjas-7f3a.md');
+        expect(openTextDocument).toHaveBeenCalledWith('/workspace/.autojudge-state/team-details/team-tninjas7f3a00.md');
         expect(executeCommand).toHaveBeenCalledWith('markdown.showPreview', document.uri, expect.any(Object));
         expect(result).toEqual(team);
     });
 
-    it('names the team standing preview by scoreboard id and ranks it from public-id standings', async () => {
+    it('names the team standing preview by public id and ranks it from public-id standings', async () => {
         const snapshot = createSnapshot();
         treeProvider.getSnapshot.mockReturnValue(snapshot);
-        openTextDocument.mockResolvedValue({ uri: 'file:///workspace/.autojudge-state/team-details/team-sb-bits-91cd.md' });
+        openTextDocument.mockResolvedValue({ uri: 'file:///workspace/.autojudge-state/team-details/team-tbits91cd0000.md' });
 
         const controller = createContestController({
             context,
@@ -434,7 +434,7 @@ describe('contest controller', () => {
         await controller.openTeamStanding(snapshot.contest.teams[1]);
 
         expect(fsState.writeFile).toHaveBeenCalledWith(
-            '/workspace/.autojudge-state/team-details/team-sb-bits-91cd.md',
+            '/workspace/.autojudge-state/team-details/team-tbits91cd0000.md',
             expect.any(String),
             { encoding: 'utf-8' }
         );
@@ -872,7 +872,7 @@ describe('contest controller', () => {
         sessionApi.loginAndLoadContest.mockResolvedValue(snapshot);
         sessionApi.refreshContestDetails.mockResolvedValue(liveContest);
         treeProvider.getSnapshot.mockReturnValue(null);
-        openTextDocument.mockResolvedValue({ uri: 'file:///workspace/.autojudge-state/team-details/team-sb-ninjas-7f3a.md' });
+        openTextDocument.mockResolvedValue({ uri: 'file:///workspace/.autojudge-state/team-details/team-tninjas7f3a00.md' });
 
         const controller = createContestController({
             context,
@@ -907,7 +907,7 @@ describe('contest controller', () => {
         // Bits now leads the refreshed standings, so Array Ninjas drops to #2 in the preview.
         await controller.openTeamStanding(liveContest.teams[0]);
         expect(fsState.writeFile).toHaveBeenLastCalledWith(
-            '/workspace/.autojudge-state/team-details/team-sb-ninjas-7f3a.md',
+            '/workspace/.autojudge-state/team-details/team-tninjas7f3a00.md',
             expect.any(String),
             { encoding: 'utf-8' }
         );

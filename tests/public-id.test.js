@@ -23,9 +23,9 @@ describe('resolveRouteId', () => {
         expect(resolveRouteId({ id: 4, publicId: '' })).toBeNull();
     });
 
-    it('routes teams by scoreboardId and never by a numeric team id', () => {
-        expect(resolveRouteId({ scoreboardId: 'sb-bits-91cd' }, 'scoreboardId')).toBe('sb-bits-91cd');
-        expect(resolveRouteId({ id: 12 }, 'scoreboardId')).toBeNull();
+    it('routes teams by publicId and never by a numeric team id', () => {
+        expect(resolveRouteId({ publicId: 'tbits91cd0000' })).toBe('tbits91cd0000');
+        expect(resolveRouteId({ id: 12 })).toBeNull();
     });
 });
 
@@ -49,17 +49,17 @@ describe('sameEntity', () => {
 });
 
 describe('sameTeam', () => {
-    it('matches teams by scoreboard id', () => {
-        expect(sameTeam({ scoreboardId: 'sb-bits-91cd' }, { scoreboardId: 'sb-bits-91cd' })).toBe(true);
-        expect(sameTeam({ scoreboardId: 'sb-bits-91cd' }, { scoreboardId: 'sb-ninjas-7f3a' })).toBe(false);
+    it('matches teams by public id', () => {
+        expect(sameTeam({ publicId: 'tbits91cd0000' }, { publicId: 'tbits91cd0000' })).toBe(true);
+        expect(sameTeam({ publicId: 'tbits91cd0000' }, { publicId: 'tninjas7f3a00' })).toBe(false);
     });
 
     it('ignores a shared numeric team id', () => {
         expect(sameTeam({ id: 9 }, { id: 9 })).toBe(false);
-        expect(sameTeam({ id: 9, scoreboardId: 'sb-bits-91cd' }, { id: 9, scoreboardId: 'sb-ninjas-7f3a' })).toBe(false);
+        expect(sameTeam({ id: 9, publicId: 'tbits91cd0000' }, { id: 9, publicId: 'tninjas7f3a00' })).toBe(false);
     });
 
-    it('never matches two teams without a scoreboard id', () => {
+    it('never matches two teams without a public id', () => {
         expect(sameTeam({ name: 'Bits' }, { name: 'Bits' })).toBe(false);
         expect(sameTeam(undefined, undefined)).toBe(false);
     });

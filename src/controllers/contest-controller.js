@@ -686,7 +686,7 @@ async function ensureSubmissionDetailFile(context, submission) {
  */
 async function ensureTeamStandingFile(context, team, currentSnapshot) {
     const previewDirectory = join(resolvePreviewRoot(context), 'team-details');
-    const previewPath = join(previewDirectory, `team-${resolveRouteId(team, 'scoreboardId') ?? 'unknown'}.md`);
+    const previewPath = join(previewDirectory, `team-${resolveRouteId(team) ?? 'unknown'}.md`);
 
     await mkdir(previewDirectory, { recursive: true });
 

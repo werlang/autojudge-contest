@@ -19,13 +19,13 @@ describe('teams standings provider', () => {
                 name: 'Regional Final',
                 teams: [
                     {
-                        scoreboardId: 'sb-bits-91cd',
+                        publicId: 'tbits91cd0000',
                         name: 'Bits',
                         score: 200000,
                         solvedProblemIds: ['pa1b2c3d4e5f6'],
                     },
                     {
-                        scoreboardId: 'sb-ninjas-7f3a',
+                        publicId: 'tninjas7f3a00',
                         name: 'Array Ninjas',
                         score: 350000,
                         solvedProblemIds: ['pa1b2c3d4e5f6', 'pb2c3d4e5f6a1'],
@@ -67,7 +67,7 @@ describe('teams standings provider', () => {
                 name: 'Regional Final',
                 teams: [
                     {
-                        scoreboardId: 'sb-bits-91cd',
+                        publicId: 'tbits91cd0000',
                         name: 'Bits',
                         score: 200000,
                         solvedProblems: [1],
