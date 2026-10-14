@@ -3,23 +3,24 @@
 ## Project Scope
 
 - This repository is a VS Code extension for browsing AutoJudge contest data with team credentials.
-- The implemented runtime currently covers team login, logout, session restore, contest explorer rendering, formatted submission-detail output, persisted problem previews, active-file submission with verdict polling, public testcase export, teams standings refresh, and team-detail output.
+- The implemented runtime currently covers browser team login (web hand-off), logout, session restore, contest explorer rendering, formatted submission-detail output, persisted problem previews, active-file submission with verdict polling, public testcase export, teams standings refresh, and team-detail output.
 - The sidebar surface includes `Contest Explorer` and `Teams Standings` under the same `AutoJudge Contest` activity-bar container.
 - Keep changes focused on the extension, its docs, and its agent customizations. Do not add unrelated app or backend patterns.
 
 ## Key Files
 
-- [package.json](package.json): extension manifest, `Contest Explorer` and `Teams Standings` views, contributed commands and menus, and the `autojudgeContest.baseUrl` and `autojudgeContest.pollIntervalMs` settings.
+- [package.json](package.json): extension manifest, `Contest Explorer` and `Teams Standings` views, contributed commands and menus, and the `autojudgeContest.baseUrl`, `autojudgeContest.webUrl` and `autojudgeContest.pollIntervalMs` settings.
 - [src/extension.js](src/extension.js): activation entrypoint that creates the `AutoJudge Contest` output channel, both sidebar views, and the command registrations.
 - [src/constants.js](src/constants.js): shared view ids, command ids, and tree context values used by the manifest and runtime.
-- [src/commands/contest-commands.js](src/commands/contest-commands.js): command wiring, login prompt flow, base URL resolution, polling-interval resolution, and controller-backed registrations.
-- [src/controllers/contest-controller.js](src/controllers/contest-controller.js): login, logout, refresh, error handling, persisted problem preview generation, submission-detail rendering, submission polling, public-case export, standings output, and shared snapshot orchestration.
+- [src/commands/contest-commands.js](src/commands/contest-commands.js): command wiring, the `/auth` URI handler, base URL resolution, polling-interval resolution, and controller-backed registrations.
+- [src/controllers/contest-controller.js](src/controllers/contest-controller.js): browser login, logout, global `SESSION_ENDED` handling, refresh, error handling, persisted problem preview generation, submission-detail rendering, submission polling, public-case export, standings output, and shared snapshot orchestration.
 - [src/presentation/contest-presentation.js](src/presentation/contest-presentation.js): problem preview and submission formatting helpers.
 - [src/providers/contest-tree-provider.js](src/providers/contest-tree-provider.js): visible contest explorer structure and submission click behavior.
 - [src/providers/teams-tree-provider.js](src/providers/teams-tree-provider.js): score-sorted team standings rows and output-opening commands.
-- [src/services/contest-api.js](src/services/contest-api.js): AutoJudge contest HTTP contract for team login, current-team lookup, contest details, contest problems, submissions, and solution upload.
-- [src/services/contest-session.js](src/services/contest-session.js): session persistence, snapshot loading, standings refresh, and submission-result polling.
-- [src/services/session-store.js](src/services/session-store.js): VS Code secrets and global-state storage for the team session.
+- [src/services/browser-login.js](src/services/browser-login.js): web login URL, `state` generation, single pending login with timeout, and `vscode://` callback validation.
+- [src/services/contest-api.js](src/services/contest-api.js): AutoJudge contest HTTP contract for hand-off code redemption, current-team lookup, contest details, contest problems, submissions, and solution upload.
+- [src/services/contest-session.js](src/services/contest-session.js): session persistence (token only, in SecretStorage), snapshot loading, standings refresh, and submission-result polling.
+- [src/services/session-store.js](src/services/session-store.js): VS Code SecretStorage for the team session token (cleared locally on logout; legacy global-state metadata is removed).
 - [src/workspace/contest-public-cases.js](src/workspace/contest-public-cases.js): public testcase extraction helpers for contest problems.
 - [src/workspace/contest-submission-workspace.js](src/workspace/contest-submission-workspace.js): active-file validation plus testcase export file-system workflows.
 - [src/utils/config.js](src/utils/config.js), [src/utils/public-id.js](src/utils/public-id.js), [src/utils/standings.js](src/utils/standings.js), [src/utils/submission-status.js](src/utils/submission-status.js): shared extension configuration, public-id route and identity helpers, standings, and submission-state helpers.
