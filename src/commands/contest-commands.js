@@ -2,9 +2,9 @@ import * as vscode from 'vscode';
 import { createContestController } from '../controllers/contest-controller.js';
 import { COMMANDS } from '../constants.js';
 import * as contestSession from '../services/contest-session.js';
-import { isTeamCode, normalizeTeamCode, TEAM_CODE_MESSAGE } from '../services/contest-api.js';
+import { BrowserLogin } from '../services/browser-login.js';
 import { ContestSubmissionWorkspace } from '../workspace/contest-submission-workspace.js';
-import config from '../utils/config.js';
+import config, { resolveWebUrl } from '../utils/config.js';
 
 /**
  * Register contest commands and keep the multi-step contest behavior inside the
@@ -18,39 +18,16 @@ import config from '../utils/config.js';
  */
 export function registerContestCommands({ context, teamsStandingsProvider, treeProvider, outputChannel }) {
     const submissionWorkspace = new ContestSubmissionWorkspace();
+    const browserLogin = new BrowserLogin({
+        openExternal: (url) => vscode.env.openExternal(vscode.Uri.parse(url)),
+        resolveWebUrl,
+    });
     const controller = createContestController({
+        browserLogin,
         context,
         executeCommand: (command, ...args) => vscode.commands.executeCommand(command, ...args),
         openTextDocument: (options) => vscode.workspace.openTextDocument(options),
         outputChannel,
-        promptTeamCredentials: async () => {
-            const teamInput = await vscode.window.showInputBox({
-                ignoreFocusOut: true,
-                placeHolder: 'team-code',
-                prompt: 'Enter your AutoJudge team code (printed on your team card).',
-                title: 'AutoJudge Contest Login',
-                validateInput: (value) => (isTeamCode(value) ? null : TEAM_CODE_MESSAGE),
-            });
-            const teamId = normalizeTeamCode(teamInput);
-
-            if (!isTeamCode(teamId)) {
-                return null;
-            }
-
-            const password = await vscode.window.showInputBox({
-                ignoreFocusOut: true,
-                password: true,
-                placeHolder: '123456',
-                prompt: 'Enter the AutoJudge team password.',
-                title: 'AutoJudge Contest Login',
-            });
-
-            if (!password) {
-                return null;
-            }
-
-            return { password, teamId };
-        },
         resolveBaseUrl: () => config.BASE_URL,
         resolvePollIntervalMs: () => {
             const configuredIntervalMs = config.POLL_INTERVAL_MS;
@@ -65,6 +42,12 @@ export function registerContestCommands({ context, teamsStandingsProvider, treeP
         setContext: (key, value) => vscode.commands.executeCommand('setContext', key, value),
         showInformationMessage: (message) => vscode.window.showInformationMessage(message),
         showErrorMessage: (message) => vscode.window.showErrorMessage(message),
+        showWarningMessage: (message, ...actions) => vscode.window.showWarningMessage(message, ...actions),
+        withCancellableProgress: (title, task) => vscode.window.withProgress({
+            cancellable: true,
+            location: vscode.ProgressLocation.Notification,
+            title,
+        }, async (_progress, cancellation) => await task(cancellation)),
         withProgressNotification: (title, task) => vscode.window.withProgress({
             cancellable: false,
             location: vscode.ProgressLocation.Notification,
@@ -77,8 +60,23 @@ export function registerContestCommands({ context, teamsStandingsProvider, treeP
 
     controller.refreshTree();
 
+    // The web app redirects to vscode://autojudge.autojudge-contest/auth after
+    // the team confirmed the connection; BrowserLogin checks `state` and keeps
+    // the pending login untouched when a link does not belong to it.
+    const uriHandler = vscode.window.registerUriHandler({
+        handleUri: (uri) => {
+            const result = browserLogin.handleUri(uri);
+            if (!result.accepted) {
+                outputChannel.appendLine(result.reason);
+                void vscode.window.showErrorMessage(result.reason);
+            }
+        },
+    });
+
     return [
         controller,
+        browserLogin,
+        uriHandler,
         vscode.commands.registerCommand(COMMANDS.LOGIN_TEAM, () => controller.loginTeam()),
         vscode.commands.registerCommand(COMMANDS.LOGOUT_TEAM, () => controller.logoutTeam()),
         vscode.commands.registerCommand(COMMANDS.REFRESH_TREE, () => controller.refreshTree()),

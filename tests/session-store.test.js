@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 function createContext() {
     const secrets = new Map();
@@ -33,31 +33,32 @@ function createContext() {
 }
 
 describe('VS Code contest session storage', () => {
-    it('stores the token in secrets and only non-sensitive metadata in global state', async () => {
+    it('stores only the token, in secrets, and writes nothing to global state', async () => {
         const context = createContext();
         const store = await import('../src/services/session-store.js');
+        const update = vi.spyOn(context.globalState, 'update');
 
-        await store.writeStoredSession(context, {
-            teamId: 'abc123',
-            token: 'jwt-value',
-        });
+        await store.writeStoredSession(context, { token: 'jwt-value' });
 
-        expect(await store.readStoredSession(context)).toEqual({
-            teamId: 'abc123',
-            token: 'jwt-value',
-        });
+        expect(await store.readStoredSession(context)).toEqual({ token: 'jwt-value' });
+        expect(update).not.toHaveBeenCalled();
     });
 
-    it('removes both the token and metadata when the session is cleared', async () => {
+    it('reads no session when no token is stored', async () => {
+        const store = await import('../src/services/session-store.js');
+
+        expect(await store.readStoredSession(createContext())).toBeNull();
+    });
+
+    it('forgets the token and the legacy metadata when the session is cleared', async () => {
         const context = createContext();
         const store = await import('../src/services/session-store.js');
 
-        await store.writeStoredSession(context, {
-            teamId: 'abc123',
-            token: 'jwt-value',
-        });
+        await context.globalState.update('autojudgeContest.session', { teamId: 'abc123' });
+        await store.writeStoredSession(context, { token: 'jwt-value' });
         await store.clearStoredSession(context);
 
         expect(await store.readStoredSession(context)).toBeNull();
+        expect(context.globalState.get('autojudgeContest.session')).toBeUndefined();
     });
 });

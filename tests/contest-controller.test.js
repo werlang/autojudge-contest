@@ -19,6 +19,7 @@ vi.mock('vscode', () => ({
 }), { virtual: true });
 
 import { createContestController } from '../src/controllers/contest-controller.js';
+import { BrowserLoginError, LOGIN_FAILURE } from '../src/services/browser-login.js';
 
 async function flushPromises(turns = 10) {
     for (let index = 0; index < turns; index += 1) {
@@ -75,7 +76,9 @@ describe('contest controller', () => {
     let context;
     let outputChannel;
     let openTextDocument;
-    let promptTeamCredentials;
+    let browserLogin;
+    let showWarningMessage;
+    let withCancellableProgress;
     let resolvePollIntervalMs;
     let resolveBaseUrl;
     let sessionApi;
@@ -104,12 +107,14 @@ describe('contest controller', () => {
         fsState.mkdir.mockReset();
         fsState.writeFile.mockReset();
         openTextDocument = vi.fn();
-        promptTeamCredentials = vi.fn();
+        browserLogin = { waitForHandoffCode: vi.fn() };
+        showWarningMessage = vi.fn();
+        withCancellableProgress = vi.fn(async (_title, task) => await task({ onCancellationRequested: vi.fn() }));
         resolvePollIntervalMs = vi.fn(() => 1500);
         resolveBaseUrl = vi.fn(() => 'https://api.autojudge.test');
         sessionApi = {
             clearStoredSession: vi.fn(),
-            loginAndLoadContest: vi.fn(),
+            redeemAndLoadContest: vi.fn(),
             pollSubmissionResult: vi.fn(),
             refreshContestDetails: vi.fn(),
             restoreContestSession: vi.fn(),
@@ -134,17 +139,17 @@ describe('contest controller', () => {
         };
     });
 
-    it('logs in with prompted credentials and pushes the snapshot into the tree', async () => {
+    it('logs in through the browser hand-off and pushes the snapshot into the tree', async () => {
         const snapshot = createSnapshot();
-        promptTeamCredentials.mockResolvedValue({ password: '123456', teamId: 'k3m9x2p7q8w1a' });
-        sessionApi.loginAndLoadContest.mockResolvedValue(snapshot);
+        browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+        sessionApi.redeemAndLoadContest.mockResolvedValue(snapshot);
 
         const controller = createContestController({
             context,
             executeCommand,
             openTextDocument,
             outputChannel,
-            promptTeamCredentials,
+            browserLogin,
             resolvePollIntervalMs,
             resolveBaseUrl,
             sessionApi,
@@ -152,24 +157,198 @@ describe('contest controller', () => {
             showInformationMessage,
             showTextDocument,
             showErrorMessage,
+            showWarningMessage,
             submissionWorkspace,
             teamsStandingsProvider,
             treeProvider,
+            withCancellableProgress,
         });
 
         const result = await controller.loginTeam();
 
-        expect(sessionApi.loginAndLoadContest).toHaveBeenCalledWith({
+        expect(withCancellableProgress).toHaveBeenCalledWith(
+            'Waiting for you to log in in the browser…',
+            expect.any(Function),
+        );
+        expect(sessionApi.redeemAndLoadContest).toHaveBeenCalledWith({
             baseUrl: 'https://api.autojudge.test',
+            code: 'handoff-code',
             context,
-            password: '123456',
-            teamId: 'k3m9x2p7q8w1a',
         });
         expect(treeProvider.setSnapshot).toHaveBeenCalledWith(snapshot);
         expect(teamsStandingsProvider.setSnapshot).toHaveBeenCalledWith(snapshot);
         expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'loggedIn');
         expect(showErrorMessage).not.toHaveBeenCalled();
         expect(result).toEqual(snapshot);
+    });
+
+    /**
+     * Build a controller with the shared doubles and optional overrides.
+     * @param {object} [overrides]
+     * @returns {ReturnType<typeof createContestController>}
+     */
+    function buildController(overrides = {}) {
+        return createContestController({
+            browserLogin,
+            context,
+            executeCommand,
+            openTextDocument,
+            outputChannel,
+            resolvePollIntervalMs,
+            resolveBaseUrl,
+            sessionApi,
+            setContext,
+            showInformationMessage,
+            showErrorMessage,
+            showWarningMessage,
+            submissionWorkspace,
+            teamsStandingsProvider,
+            treeProvider,
+            withCancellableProgress,
+            withProgressNotification,
+            ...overrides,
+        });
+    }
+
+    /**
+     * Build an API-style error as the contest API client throws it.
+     * @param {number} statusCode
+     * @param {string} code
+     * @param {string} message
+     * @returns {Error}
+     */
+    function apiError(statusCode, code, message) {
+        return Object.assign(new Error(message), { code, statusCode });
+    }
+
+    it('hands the cancellation token of the progress notification to the browser login', async () => {
+        const cancellation = { onCancellationRequested: vi.fn() };
+        withCancellableProgress.mockImplementation(async (_title, task) => await task(cancellation));
+        browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+        sessionApi.redeemAndLoadContest.mockResolvedValue(createSnapshot());
+
+        await buildController().loginTeam();
+
+        expect(browserLogin.waitForHandoffCode).toHaveBeenCalledWith(cancellation);
+    });
+
+    it('ends quietly when the user cancels the browser login', async () => {
+        browserLogin.waitForHandoffCode.mockRejectedValue(new BrowserLoginError(LOGIN_FAILURE.CANCELLED, 'Login cancelled.'));
+
+        const result = await buildController().loginTeam();
+
+        expect(result).toBeNull();
+        expect(sessionApi.redeemAndLoadContest).not.toHaveBeenCalled();
+        expect(showErrorMessage).not.toHaveBeenCalled();
+    });
+
+    it('reports a browser login that timed out', async () => {
+        browserLogin.waitForHandoffCode.mockRejectedValue(new BrowserLoginError(LOGIN_FAILURE.TIMEOUT, 'The browser login timed out. Run Login Team again.'));
+
+        const result = await buildController().loginTeam();
+
+        expect(result).toBeNull();
+        expect(showErrorMessage).toHaveBeenCalledWith('The browser login timed out. Run Login Team again.');
+        expect(sessionApi.clearStoredSession).not.toHaveBeenCalled();
+    });
+
+    it('explains an expired or reused hand-off code without clearing the stored session', async () => {
+        browserLogin.waitForHandoffCode.mockResolvedValue('used-code');
+        sessionApi.redeemAndLoadContest.mockRejectedValue(apiError(400, 'HANDOFF_INVALID', 'This sign-in link is invalid or has expired.'));
+
+        const result = await buildController().loginTeam();
+
+        expect(result).toBeNull();
+        expect(showErrorMessage).toHaveBeenCalledWith('The browser login link expired or was already used. Run Login Team again.');
+        expect(sessionApi.clearStoredSession).not.toHaveBeenCalled();
+        expect(showWarningMessage).not.toHaveBeenCalled();
+    });
+
+    it('clears the token and offers a Log in action when restoring a session finds it ended', async () => {
+        sessionApi.restoreContestSession.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'Your team session has ended. Log in again.'));
+        showWarningMessage.mockResolvedValue(undefined);
+
+        const result = await buildController().refreshTree();
+        await flushPromises();
+
+        expect(result).toBeNull();
+        expect(sessionApi.clearStoredSession).toHaveBeenCalledWith(context);
+        expect(treeProvider.setSnapshot).toHaveBeenCalledWith(null);
+        expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'loggedOut');
+        expect(showWarningMessage).toHaveBeenCalledWith(
+            'Your session ended. Log in again (ask staff to reset your PIN if needed).',
+            'Log in',
+        );
+        expect(showErrorMessage).not.toHaveBeenCalled();
+        expect(browserLogin.waitForHandoffCode).not.toHaveBeenCalled();
+    });
+
+    it('starts the browser login when the Log in action of the session-ended message is chosen', async () => {
+        const snapshot = createSnapshot();
+        sessionApi.submitSolution.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
+        submissionWorkspace.readActiveSourceFile.mockResolvedValue({ filename: 'main.py', sourceCode: 'print(1)' });
+        showWarningMessage.mockResolvedValue('Log in');
+        browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+        sessionApi.redeemAndLoadContest.mockResolvedValue(snapshot);
+
+        await buildController().submitActiveFile(snapshot.problems[0]);
+        await flushPromises();
+
+        expect(sessionApi.clearStoredSession).toHaveBeenCalledWith(context);
+        expect(browserLogin.waitForHandoffCode).toHaveBeenCalledTimes(1);
+        expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(snapshot);
+    });
+
+    it('handles an ended session found by the timed standings refresh', async () => {
+        vi.useFakeTimers();
+        const snapshot = createSnapshot();
+        browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+        sessionApi.redeemAndLoadContest.mockResolvedValue(snapshot);
+        sessionApi.refreshContestDetails.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
+
+        const controller = buildController();
+        await controller.loginTeam();
+        await vi.advanceTimersByTimeAsync(15000);
+
+        expect(sessionApi.clearStoredSession).toHaveBeenCalledWith(context);
+        expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(null);
+        expect(showWarningMessage).toHaveBeenCalledTimes(1);
+        expect(outputChannel.appendLine).not.toHaveBeenCalledWith(expect.stringContaining('Standings refresh failed'));
+
+        controller.dispose();
+        vi.useRealTimers();
+    });
+
+    it('handles an ended session found while polling a submission verdict', async () => {
+        const snapshot = createSnapshot();
+        treeProvider.getSnapshot.mockReturnValue(snapshot);
+        submissionWorkspace.readActiveSourceFile.mockResolvedValue({ filename: 'main.py', sourceCode: 'print(1)' });
+        sessionApi.submitSolution.mockResolvedValue({ id: 5, status: 'PENDING' });
+        sessionApi.pollSubmissionResult.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
+
+        await buildController().submitActiveFile(snapshot.problems[0]);
+
+        expect(sessionApi.clearStoredSession).toHaveBeenCalledWith(context);
+        expect(showWarningMessage).toHaveBeenCalledTimes(1);
+        expect(showErrorMessage).not.toHaveBeenCalled();
+    });
+
+    it('shows the session-ended message once when several requests notice it together', async () => {
+        sessionApi.restoreContestSession.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
+        const controller = buildController();
+
+        await Promise.all([controller.refreshTree(), controller.refreshTree()]);
+
+        expect(showWarningMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not treat other 401 errors as an ended session', async () => {
+        sessionApi.restoreContestSession.mockRejectedValue(apiError(401, 'UNAUTHORIZED', 'Not allowed.'));
+
+        await buildController().refreshTree();
+
+        expect(showErrorMessage).toHaveBeenCalledWith('Not allowed.');
+        expect(showWarningMessage).not.toHaveBeenCalled();
     });
 
     it('restores a saved session when refresh is invoked', async () => {
@@ -181,7 +360,7 @@ describe('contest controller', () => {
             executeCommand,
             openTextDocument,
             outputChannel,
-            promptTeamCredentials,
+            browserLogin,
             resolvePollIntervalMs,
             resolveBaseUrl,
             sessionApi,
@@ -189,9 +368,11 @@ describe('contest controller', () => {
             showInformationMessage,
             showTextDocument,
             showErrorMessage,
+            showWarningMessage,
             submissionWorkspace,
             teamsStandingsProvider,
             treeProvider,
+            withCancellableProgress,
         });
 
         const result = await controller.refreshTree();
@@ -212,7 +393,7 @@ describe('contest controller', () => {
             executeCommand,
             openTextDocument,
             outputChannel,
-            promptTeamCredentials,
+            browserLogin,
             resolvePollIntervalMs,
             resolveBaseUrl,
             sessionApi,
@@ -220,9 +401,11 @@ describe('contest controller', () => {
             showInformationMessage,
             showTextDocument,
             showErrorMessage,
+            showWarningMessage,
             submissionWorkspace,
             teamsStandingsProvider,
             treeProvider,
+            withCancellableProgress,
         });
 
         await controller.logoutTeam();
@@ -242,7 +425,7 @@ describe('contest controller', () => {
             executeCommand,
             openTextDocument,
             outputChannel,
-            promptTeamCredentials,
+            browserLogin,
             resolvePollIntervalMs,
             resolveBaseUrl,
             sessionApi,
@@ -250,9 +433,11 @@ describe('contest controller', () => {
             showInformationMessage,
             showTextDocument,
             showErrorMessage,
+            showWarningMessage,
             submissionWorkspace,
             teamsStandingsProvider,
             treeProvider,
+            withCancellableProgress,
         });
 
         await controller.openProblem({
@@ -286,7 +471,7 @@ describe('contest controller', () => {
             executeCommand,
             openTextDocument,
             outputChannel,
-            promptTeamCredentials,
+            browserLogin,
             resolvePollIntervalMs,
             resolveBaseUrl,
             sessionApi,
@@ -294,9 +479,11 @@ describe('contest controller', () => {
             showInformationMessage,
             showTextDocument,
             showErrorMessage,
+            showWarningMessage,
             submissionWorkspace,
             teamsStandingsProvider,
             treeProvider,
+            withCancellableProgress,
         });
 
         const contest = {
@@ -330,7 +517,7 @@ describe('contest controller', () => {
             executeCommand,
             openTextDocument,
             outputChannel,
-            promptTeamCredentials,
+            browserLogin,
             resolvePollIntervalMs,
             resolveBaseUrl,
             sessionApi,
@@ -342,6 +529,7 @@ describe('contest controller', () => {
             submissionWorkspace,
             teamsStandingsProvider,
             treeProvider,
+            withCancellableProgress,
         });
 
         const submission = {
@@ -378,7 +566,7 @@ describe('contest controller', () => {
             executeCommand,
             openTextDocument,
             outputChannel,
-            promptTeamCredentials,
+            browserLogin,
             resolvePollIntervalMs,
             resolveBaseUrl,
             sessionApi,
@@ -390,6 +578,7 @@ describe('contest controller', () => {
             submissionWorkspace,
             teamsStandingsProvider,
             treeProvider,
+            withCancellableProgress,
         });
 
         const team = snapshot.team.contest.teams[0];
@@ -418,7 +607,7 @@ describe('contest controller', () => {
             executeCommand,
             openTextDocument,
             outputChannel,
-            promptTeamCredentials,
+            browserLogin,
             resolvePollIntervalMs,
             resolveBaseUrl,
             sessionApi,
@@ -426,9 +615,11 @@ describe('contest controller', () => {
             showInformationMessage,
             showTextDocument,
             showErrorMessage,
+            showWarningMessage,
             submissionWorkspace,
             teamsStandingsProvider,
             treeProvider,
+            withCancellableProgress,
         });
 
         await controller.openTeamStanding(snapshot.contest.teams[1]);
@@ -467,16 +658,18 @@ describe('contest controller', () => {
             context,
             openTextDocument,
             outputChannel,
-            promptTeamCredentials,
+            browserLogin,
             resolveBaseUrl,
             sessionApi,
             setContext,
             showInformationMessage,
             showTextDocument,
             showErrorMessage,
+            showWarningMessage,
             submissionWorkspace,
             teamsStandingsProvider,
             treeProvider,
+            withCancellableProgress,
         });
 
         const result = await controller.submitActiveFile(snapshot.problems[0]);
@@ -514,16 +707,18 @@ describe('contest controller', () => {
             context,
             openTextDocument,
             outputChannel,
-            promptTeamCredentials,
+            browserLogin,
             resolveBaseUrl,
             sessionApi,
             setContext,
             showInformationMessage,
             showTextDocument,
             showErrorMessage,
+            showWarningMessage,
             submissionWorkspace,
             teamsStandingsProvider,
             treeProvider,
+            withCancellableProgress,
         });
 
         await controller.submitActiveFile(publicProblem);
@@ -568,7 +763,7 @@ describe('contest controller', () => {
             context,
             openTextDocument,
             outputChannel,
-            promptTeamCredentials,
+            browserLogin,
             resolvePollIntervalMs,
             resolveBaseUrl,
             sessionApi,
@@ -580,6 +775,7 @@ describe('contest controller', () => {
             submissionWorkspace,
             teamsStandingsProvider,
             treeProvider,
+            withCancellableProgress,
         });
 
         const result = await controller.submitActiveFile(snapshot.problems[0]);
@@ -646,7 +842,7 @@ describe('contest controller', () => {
             context,
             openTextDocument,
             outputChannel,
-            promptTeamCredentials,
+            browserLogin,
             resolvePollIntervalMs,
             resolveBaseUrl,
             sessionApi,
@@ -658,6 +854,7 @@ describe('contest controller', () => {
             submissionWorkspace,
             teamsStandingsProvider,
             treeProvider,
+            withCancellableProgress,
         });
 
         const pendingResult = controller.submitActiveFile(snapshot.problems[0]);
@@ -704,7 +901,7 @@ describe('contest controller', () => {
             context,
             openTextDocument,
             outputChannel,
-            promptTeamCredentials,
+            browserLogin,
             resolvePollIntervalMs,
             resolveBaseUrl,
             sessionApi,
@@ -716,6 +913,7 @@ describe('contest controller', () => {
             submissionWorkspace,
             teamsStandingsProvider,
             treeProvider,
+            withCancellableProgress,
         });
 
         const result = await controller.submitActiveFile(snapshot.problems[0]);
@@ -756,7 +954,7 @@ describe('contest controller', () => {
             context,
             openTextDocument,
             outputChannel,
-            promptTeamCredentials,
+            browserLogin,
             resolvePollIntervalMs,
             resolveBaseUrl,
             sessionApi,
@@ -764,9 +962,11 @@ describe('contest controller', () => {
             showInformationMessage,
             showTextDocument,
             showErrorMessage,
+            showWarningMessage,
             submissionWorkspace,
             teamsStandingsProvider,
             treeProvider,
+            withCancellableProgress,
         });
 
         const result = await controller.exportPublicCases(snapshot.problems[0]);
@@ -794,7 +994,7 @@ describe('contest controller', () => {
             context,
             openTextDocument,
             outputChannel,
-            promptTeamCredentials,
+            browserLogin,
             resolvePollIntervalMs,
             resolveBaseUrl,
             sessionApi,
@@ -802,9 +1002,11 @@ describe('contest controller', () => {
             showInformationMessage,
             showTextDocument,
             showErrorMessage,
+            showWarningMessage,
             submissionWorkspace,
             teamsStandingsProvider,
             treeProvider,
+            withCancellableProgress,
         });
 
         const selectedProblem = {
@@ -831,7 +1033,7 @@ describe('contest controller', () => {
             context,
             openTextDocument,
             outputChannel,
-            promptTeamCredentials,
+            browserLogin,
             resolvePollIntervalMs,
             resolveBaseUrl,
             sessionApi,
@@ -839,9 +1041,11 @@ describe('contest controller', () => {
             showInformationMessage,
             showTextDocument,
             showErrorMessage,
+            showWarningMessage,
             submissionWorkspace,
             teamsStandingsProvider,
             treeProvider,
+            withCancellableProgress,
         });
 
         const result = await controller.exportPublicCases({
@@ -868,8 +1072,8 @@ describe('contest controller', () => {
                 { ...bits, score: 360000, solvedProblemIds: ['pa1b2c3d4e5f6', 'pb2c3d4e5f6a1'] },
             ],
         };
-        promptTeamCredentials.mockResolvedValue({ password: '123456', teamId: 'k3m9x2p7q8w1a' });
-        sessionApi.loginAndLoadContest.mockResolvedValue(snapshot);
+        browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+        sessionApi.redeemAndLoadContest.mockResolvedValue(snapshot);
         sessionApi.refreshContestDetails.mockResolvedValue(liveContest);
         treeProvider.getSnapshot.mockReturnValue(null);
         openTextDocument.mockResolvedValue({ uri: 'file:///workspace/.autojudge-state/team-details/team-tninjas7f3a00.md' });
@@ -879,7 +1083,7 @@ describe('contest controller', () => {
             executeCommand,
             openTextDocument,
             outputChannel,
-            promptTeamCredentials,
+            browserLogin,
             resolvePollIntervalMs,
             resolveBaseUrl,
             sessionApi,
@@ -887,9 +1091,11 @@ describe('contest controller', () => {
             showInformationMessage,
             showTextDocument,
             showErrorMessage,
+            showWarningMessage,
             submissionWorkspace,
             teamsStandingsProvider,
             treeProvider,
+            withCancellableProgress,
         });
 
         await controller.loginTeam();

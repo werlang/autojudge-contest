@@ -1,9 +1,14 @@
-const TEAM_CODE_PATTERN = /^[0-9a-z]{13}$/;
+/**
+ * Error code the server sends when a team session is no longer valid: another
+ * login replaced it, staff reset the PIN, or the contest window closed.
+ */
+export const SESSION_ENDED_CODE = 'SESSION_ENDED';
 
 /**
- * Explain the accepted team code format in the login input box and in errors.
+ * Error code the server sends when a hand-off code is unknown, expired or
+ * already used.
  */
-export const TEAM_CODE_MESSAGE = 'Enter the 13-character team code printed on your team card, using letters a-z and digits 0-9.';
+export const HANDOFF_INVALID_CODE = 'HANDOFF_INVALID';
 
 /**
  * Normalize the contest API base URL while preserving optional base paths.
@@ -22,46 +27,33 @@ export function normalizeBaseUrl(value) {
 }
 
 /**
- * Normalize a team code typed at login. Team public ids are lowercase base36,
- * so surrounding whitespace is trimmed and letters are lowercased before use.
- * @param {unknown} value
- * @returns {string}
- */
-export function normalizeTeamCode(value) {
-    return String(value ?? '').trim().toLowerCase();
-}
-
-/**
- * Check whether a typed team code is a 13-character public id after trimming
- * and lowercasing. Anything else, including older six-character team hashes, is
- * rejected.
- * @param {unknown} value
- * @returns {boolean}
- */
-export function isTeamCode(value) {
-    return TEAM_CODE_PATTERN.test(normalizeTeamCode(value));
-}
-
-/**
- * Exchange a team password for a contest team JWT. Rejects any team code that is
- * not a 13-character public id before the request is sent.
- * @param {{ baseUrl: string, password: string, teamId: string, signal?: AbortSignal }} options
+ * Exchange the one-time hand-off code the browser delivered for the team's
+ * session token. The token is the same one the browser holds (same session id),
+ * so no credentials pass through the extension.
+ * @param {{ baseUrl: string, code: string, signal?: AbortSignal }} options
  * @returns {Promise<{ token: string }>}
  */
-export async function loginTeam({ baseUrl, password, teamId, signal }) {
-    if (!isTeamCode(teamId)) {
-        throw new Error(TEAM_CODE_MESSAGE);
-    }
-
+export async function redeemHandoffCode({ baseUrl, code, signal }) {
     return requestJson({
         baseUrl,
-        endpoint: `teams/${encodeURIComponent(normalizeTeamCode(teamId))}/login`,
+        body: { code },
+        endpoint: 'teams/session/redeem',
         headers: {
-            Authorization: `Bearer ${password}`,
+            'Content-Type': 'application/json',
         },
         method: 'POST',
         signal,
     });
+}
+
+/**
+ * Check whether a failed request means the team session is over, whatever call
+ * produced it.
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+export function isSessionEnded(error) {
+    return error?.statusCode === 401 && error?.code === SESSION_ENDED_CODE;
 }
 
 /**
@@ -186,6 +178,7 @@ async function requestJson({ baseUrl, endpoint, headers, method, signal, body })
     if (!response.ok) {
         const error = new Error(payload.message || 'AutoJudge Contest request failed.');
         error.statusCode = response.status;
+        error.code = payload.code;
         error.payload = payload;
         throw error;
     }

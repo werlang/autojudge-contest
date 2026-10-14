@@ -25,6 +25,8 @@ const createTreeView = vi.fn((viewId, options) => {
     return { dispose: vi.fn() };
 });
 
+const registerUriHandler = vi.fn(() => ({ dispose: vi.fn() }));
+
 const getConfiguration = vi.fn(() => ({
     get: (_key, fallbackValue) => fallbackValue,
 }));
@@ -34,14 +36,22 @@ vi.mock('vscode', () => ({
         executeCommand,
         registerCommand,
     },
+    env: {
+        openExternal: vi.fn(),
+    },
+    Uri: {
+        parse: vi.fn(),
+    },
     ProgressLocation: {
         Notification: 15,
     },
     window: {
         createOutputChannel,
         createTreeView,
+        registerUriHandler,
         showErrorMessage: vi.fn(),
         showInformationMessage: vi.fn(),
+        showWarningMessage: vi.fn(),
     },
     workspace: {
         getConfiguration,
@@ -62,6 +72,7 @@ beforeEach(() => {
     registerCommand.mockClear();
     executeCommand.mockClear();
     createTreeView.mockClear();
+    registerUriHandler.mockClear();
     getConfiguration.mockClear();
 });
 
@@ -101,7 +112,9 @@ describe('contest extension activation', () => {
             'autojudgeContest.openSubmission',
             'autojudgeContest.openTeamStanding',
         ]);
-        expect(context.subscriptions).toHaveLength(14);
+        expect(registerUriHandler).toHaveBeenCalledTimes(1);
+        expect(registerUriHandler).toHaveBeenCalledWith({ handleUri: expect.any(Function) });
+        expect(context.subscriptions).toHaveLength(16);
     });
 
     it('exports a deactivate function', () => {
@@ -172,6 +185,7 @@ describe('contest manifest contract', () => {
         expect(manifest.contributes.configuration.properties).toEqual(expect.objectContaining({
             'autojudgeContest.baseUrl': expect.any(Object),
             'autojudgeContest.pollIntervalMs': expect.any(Object),
+            'autojudgeContest.webUrl': expect.objectContaining({ default: 'https://autojudge.io' }),
         }));
     });
 });

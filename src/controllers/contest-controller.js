@@ -9,6 +9,8 @@ import {
     renderSubmissionDetails,
     renderTeamStandingDetails,
 } from '../presentation/contest-presentation.js';
+import { HANDOFF_INVALID_CODE, isSessionEnded } from '../services/contest-api.js';
+import { BrowserLoginError, LOGIN_FAILURE } from '../services/browser-login.js';
 import { isPendingSubmission } from '../utils/submission-status.js';
 import { resolveRouteId } from '../utils/public-id.js';
 import { extractSolvedProblemNames, normalizeStandingScore } from '../utils/standings.js';
@@ -16,6 +18,11 @@ import { extractPublicCases } from '../workspace/contest-public-cases.js';
 import { TEAM_PANEL_REFRESH_INTERVAL_MS } from '../utils/config.js';
 
 const SUBMISSION_POLL_TIMEOUT_MS = 2 * 60 * 1000;
+
+const LOGIN_ACTION_LABEL = 'Log in';
+const WAITING_FOR_BROWSER_MESSAGE = 'Waiting for you to log in in the browser…';
+const SESSION_ENDED_MESSAGE = 'Your session ended. Log in again (ask staff to reset your PIN if needed).';
+const HANDOFF_INVALID_MESSAGE = 'The browser login link expired or was already used. Run Login Team again.';
 
 /**
  * Create the orchestrator that bridges VS Code command handlers to the contest
@@ -25,31 +32,35 @@ const SUBMISSION_POLL_TIMEOUT_MS = 2 * 60 * 1000;
  * @param {(command: string, ...args: unknown[]) => Promise<void> | void} [options.executeCommand]
  * @param {(uriOrOptions: string | { content: string, language: string }) => Promise<unknown>} options.openTextDocument
  * @param {{ appendLine: (message: string) => void }} options.outputChannel
- * @param {() => Promise<{ teamId: string, password: string } | null>} options.promptTeamCredentials
+ * @param {{ waitForHandoffCode: (cancellation?: object) => Promise<string> }} options.browserLogin starts the browser login and resolves with its one-time hand-off code
  * @param {() => number} [options.resolvePollIntervalMs]
  * @param {() => string} options.resolveBaseUrl
- * @param {{ clearStoredSession: Function, loginAndLoadContest: Function, pollSubmissionResult?: Function, refreshContestDetails?: Function, restoreContestSession: Function, submitSolution: Function }} options.sessionApi
+ * @param {{ clearStoredSession: Function, redeemAndLoadContest: Function, pollSubmissionResult?: Function, refreshContestDetails?: Function, restoreContestSession: Function, submitSolution: Function }} options.sessionApi
  * @param {(key: string, value: string | boolean) => Promise<void> | void} options.setContext
  * @param {(message: string) => Promise<void> | void} options.showInformationMessage
  * @param {(message: string) => Promise<void> | void} options.showErrorMessage
+ * @param {(message: string, ...actions: string[]) => Promise<string | undefined> | string | undefined} options.showWarningMessage resolves with the chosen action label
  * @param {<T>(title: string, task: () => Promise<T>) => Promise<T>} [options.withProgressNotification]
+ * @param {<T>(title: string, task: (cancellation: object) => Promise<T>) => Promise<T>} options.withCancellableProgress shows a cancellable notification and passes the cancellation token to the task
  * @param {{ exportPublicCases: Function, readActiveSourceFile: Function }} options.submissionWorkspace
  * @param {{ setSnapshot: (snapshot: object | null) => void }} options.teamsStandingsProvider
  * @param {{ setSnapshot: (snapshot: object | null) => void }} options.treeProvider
  * @returns {{ dispose: () => void, exportPublicCases: (problem?: object | undefined | null) => Promise<object | null>, loginTeam: () => Promise<object | null>, logoutTeam: () => Promise<null>, openProblem: (problem: object | undefined | null) => Promise<unknown>, openSubmission: (submission: object | undefined | null) => Promise<object | null>, openTeamStanding: (team: object | undefined | null) => Promise<object | null>, refreshTree: () => Promise<object | null>, openContestDashboard: () => Promise<object | null>, submitActiveFile: (problem?: object | undefined | null) => Promise<object | null> }}*/
 export function createContestController({
+    browserLogin,
     context,
     executeCommand = async () => {},
     openTextDocument,
     outputChannel,
-    promptTeamCredentials,
     resolvePollIntervalMs,
     resolveBaseUrl,
     sessionApi,
     setContext,
     showInformationMessage,
     showErrorMessage,
+    showWarningMessage = async () => undefined,
     withProgressNotification = async (_title, task) => await task(),
+    withCancellableProgress = async (_title, task) => await task({ onCancellationRequested: () => {} }),
     submissionWorkspace,
     teamsStandingsProvider,
     treeProvider,
@@ -58,6 +69,7 @@ export function createContestController({
     let teamsRefreshErrorMessage = null;
     let teamsRefreshInFlight = false;
     let teamsRefreshTimer = null;
+    let sessionEndedPromptShown = false;
 
     const syncTreeState = async (snapshot) => {
         currentSnapshot = snapshot;
@@ -68,9 +80,45 @@ export function createContestController({
         return snapshot;
     };
 
+    /**
+     * Report a failed command. A session that ended on the server is handled
+     * globally: whichever request noticed it, the token is dropped and the user
+     * is offered a new login.
+     * @param {Error & { statusCode?: number, code?: string }} error
+     * @returns {Promise<null>}
+     */
     const handleFailure = async (error) => {
+        if (isSessionEnded(error)) {
+            return handleSessionEnded();
+        }
+
         outputChannel.appendLine(`ERROR: ${error.message}`);
         await showErrorMessage(error.message);
+        return null;
+    };
+
+    /**
+     * Forget the dead session token, return the sidebar to the logged-out state,
+     * and offer a "Log in" action. Several requests can notice the same ended
+     * session at once, so the prompt is only shown once until the next login.
+     * @returns {Promise<null>}
+     */
+    const handleSessionEnded = async () => {
+        await sessionApi.clearStoredSession(context);
+        await syncTreeState(null);
+
+        if (sessionEndedPromptShown) {
+            return null;
+        }
+
+        sessionEndedPromptShown = true;
+        outputChannel.appendLine(SESSION_ENDED_MESSAGE);
+
+        // Do not wait for the toast: callers may be inside a progress
+        // notification or a command that should finish right away.
+        void Promise.resolve(showWarningMessage(SESSION_ENDED_MESSAGE, LOGIN_ACTION_LABEL))
+            .then(action => (action === LOGIN_ACTION_LABEL ? controller.loginTeam() : null));
+
         return null;
     };
 
@@ -155,6 +203,11 @@ export function createContestController({
             });
         }
         catch (error) {
+            if (isSessionEnded(error)) {
+                await handleSessionEnded();
+                return;
+            }
+
             if (teamsRefreshErrorMessage !== error.message) {
                 outputChannel.appendLine(`Standings refresh failed: ${error.message}`);
                 teamsRefreshErrorMessage = error.message;
@@ -266,6 +319,11 @@ export function createContestController({
                 return finalSubmission;
             }
             catch (error) {
+                if (isSessionEnded(error)) {
+                    await handleSessionEnded();
+                    return submission;
+                }
+
                 const failureMessage = `Submission #${submission.id} polling stopped: ${error.message}`;
                 outputChannel.appendLine(failureMessage);
                 showErrorMessage(`Could not refresh submission #${submission.id}: ${error.message}`);
@@ -274,7 +332,7 @@ export function createContestController({
         });
     };
 
-    return {
+    const controller = {
         /**
          * Dispose controller-owned timers.
          */
@@ -283,32 +341,45 @@ export function createContestController({
         },
 
         /**
-         * Prompt for team credentials, then load and display the contest snapshot.
+         * Log in through the browser: open the web team login, wait for it to
+         * hand a one-time code back to VS Code, redeem it for the team session
+         * token, then load and display the contest snapshot. No credentials are
+         * typed or handled here.
          * @returns {Promise<object | null>}
          */
         async loginTeam() {
-            const credentials = await promptTeamCredentials();
-            if (!credentials) {
-                return null;
-            }
-
             try {
-                const snapshot = await sessionApi.loginAndLoadContest({
+                const code = await withCancellableProgress(
+                    WAITING_FOR_BROWSER_MESSAGE,
+                    (cancellation) => browserLogin.waitForHandoffCode(cancellation),
+                );
+                const snapshot = await sessionApi.redeemAndLoadContest({
                     baseUrl: resolveBaseUrl(),
+                    code,
                     context,
-                    password: credentials.password,
-                    teamId: credentials.teamId,
                 });
+                sessionEndedPromptShown = false;
                 outputChannel.appendLine(`Logged in as ${snapshot.team.name} for ${snapshot.contest.name.trim()}.`);
                 return await syncTreeState(snapshot);
             }
             catch (error) {
+                if (error instanceof BrowserLoginError && (error.reason === LOGIN_FAILURE.CANCELLED || error.reason === LOGIN_FAILURE.SUPERSEDED)) {
+                    outputChannel.appendLine('Login cancelled.');
+                    return null;
+                }
+
+                if (error?.code === HANDOFF_INVALID_CODE) {
+                    return handleFailure(new Error(HANDOFF_INVALID_MESSAGE));
+                }
+
                 return handleFailure(error);
             }
         },
 
         /**
-         * Clear the stored team session and return the sidebar to the logged-out state.
+         * Forget the stored team token and return the sidebar to the logged-out
+         * state. This is local only: the team session stays active on the server,
+         * so the browser (and a later login from here) keep working.
          * @returns {Promise<null>}
          */
         async logoutTeam() {
@@ -494,6 +565,7 @@ export function createContestController({
                     context,
                 });
                 if (snapshot) {
+                    sessionEndedPromptShown = false;
                     outputChannel.appendLine(`Loaded ${snapshot.contest.name.trim()} for ${snapshot.team.name}.`);
                 }
                 return await syncTreeState(snapshot);
@@ -503,6 +575,8 @@ export function createContestController({
             }
         },
     };
+
+    return controller;
 }
 
 /**

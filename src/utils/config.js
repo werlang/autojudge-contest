@@ -1,6 +1,17 @@
 import * as vscode from 'vscode';
 import { normalizeBaseUrl } from '../services/contest-api.js';
 
+const DEFAULT_WEB_URL = 'https://autojudge.io';
+
+/**
+ * Read the AutoJudge web app address used for the browser login. Read on every
+ * login so a changed setting applies without reloading the window.
+ * @returns {string}
+ */
+export function resolveWebUrl() {
+    return vscode.workspace.getConfiguration('autojudgeContest').get('webUrl', DEFAULT_WEB_URL);
+}
+
 const config = {
     SUPPORTED_EXTENSIONS: ['.c', '.cpp', '.java', '.js', '.php', '.py'],
     BASE_URL:  normalizeBaseUrl(vscode.workspace.getConfiguration('autojudgeContest').get('baseUrl', 'https://api.autojudge.io')),

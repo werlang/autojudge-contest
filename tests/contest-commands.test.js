@@ -2,8 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const vscodeState = vi.hoisted(() => ({
     executeCommand: vi.fn(),
+    openExternal: vi.fn(),
     registerCommand: vi.fn(),
-    showInputBox: vi.fn(),
+    registerUriHandler: vi.fn(),
+    showErrorMessage: vi.fn(),
+    showWarningMessage: vi.fn(),
+    webUrl: 'https://autojudge.io',
+    withProgress: vi.fn(),
 }));
 
 vi.mock('vscode', () => ({
@@ -11,24 +16,31 @@ vi.mock('vscode', () => ({
         executeCommand: vscodeState.executeCommand,
         registerCommand: vscodeState.registerCommand,
     },
+    env: {
+        openExternal: vscodeState.openExternal,
+    },
     ProgressLocation: { Notification: 15 },
+    Uri: {
+        parse: (value) => ({ toString: () => value }),
+    },
     window: {
-        showErrorMessage: vi.fn(),
+        registerUriHandler: vscodeState.registerUriHandler,
+        showErrorMessage: vscodeState.showErrorMessage,
         showInformationMessage: vi.fn(),
-        showInputBox: vscodeState.showInputBox,
-        withProgress: vi.fn(),
+        showWarningMessage: vscodeState.showWarningMessage,
+        withProgress: vscodeState.withProgress,
     },
     workspace: {
         getConfiguration: () => ({
-            get: (_key, fallbackValue) => fallbackValue,
+            get: (key, fallbackValue) => (key === 'webUrl' ? vscodeState.webUrl : fallbackValue),
         }),
     },
 }), { virtual: true });
 
 vi.mock('../src/services/contest-session.js', () => ({
     clearStoredSession: vi.fn(),
-    loginAndLoadContest: vi.fn(),
     pollSubmissionResult: vi.fn(),
+    redeemAndLoadContest: vi.fn(),
     refreshContestDetails: vi.fn(),
     restoreContestSession: vi.fn(),
     submitSolution: vi.fn(),
@@ -38,71 +50,142 @@ import { registerContestCommands } from '../src/commands/contest-commands.js';
 import { COMMANDS } from '../src/constants.js';
 import * as contestSession from '../src/services/contest-session.js';
 
+const outputChannel = { appendLine: vi.fn(), show: vi.fn() };
+
 /**
- * Register the contest commands and return the login command callback.
- * @returns {Function}
+ * Register the contest commands and return the pieces the login flow uses.
+ * @returns {{ loginCommand: Function, uriHandler: { handleUri: Function } }}
  */
-function registerLoginCommand() {
+function registerLogin() {
     registerContestCommands({
         context: {},
-        outputChannel: { appendLine: vi.fn(), show: vi.fn() },
+        outputChannel,
         teamsStandingsProvider: { setSnapshot: vi.fn() },
         treeProvider: { getSnapshot: vi.fn(() => null), setSnapshot: vi.fn() },
     });
 
-    return vscodeState.registerCommand.mock.calls
-        .find(([command]) => command === COMMANDS.LOGIN_TEAM)[1];
+    return {
+        loginCommand: vscodeState.registerCommand.mock.calls
+            .find(([command]) => command === COMMANDS.LOGIN_TEAM)[1],
+        uriHandler: vscodeState.registerUriHandler.mock.calls[0][0],
+    };
+}
+
+/**
+ * Read the `state` query value from the URL passed to the last openExternal call.
+ * @returns {string}
+ */
+function openedState() {
+    const opened = vscodeState.openExternal.mock.calls.at(-1)[0].toString();
+    return new URL(opened).searchParams.get('state');
 }
 
 beforeEach(() => {
     vi.clearAllMocks();
+    vscodeState.webUrl = 'https://autojudge.io';
+    vscodeState.openExternal.mockResolvedValue(true);
+    vscodeState.registerUriHandler.mockReturnValue({ dispose: vi.fn() });
+    vscodeState.showWarningMessage.mockResolvedValue(undefined);
+    // Like VS Code: run the task with a cancellation token and wait for it.
+    vscodeState.withProgress.mockImplementation(async (_options, task) => await task(
+        {},
+        { onCancellationRequested: vi.fn() },
+    ));
+    contestSession.restoreContestSession.mockResolvedValue(null);
 });
 
-describe('team login prompt', () => {
-    it('asks for a team code and normalizes it before logging in', async () => {
-        const loginCommand = registerLoginCommand();
-        vscodeState.showInputBox
-            .mockResolvedValueOnce('  K3M9X2P7Q8W1A ')
-            .mockResolvedValueOnce('123456');
-        contestSession.loginAndLoadContest.mockResolvedValue({
+describe('browser team login', () => {
+    it('registers a URI handler and no longer asks for a team code or PIN', () => {
+        registerLogin();
+
+        expect(vscodeState.registerUriHandler).toHaveBeenCalledTimes(1);
+        expect(vscodeState.registerUriHandler.mock.calls[0][0]).toEqual({ handleUri: expect.any(Function) });
+    });
+
+    it('opens the web login page with a fresh state under a cancellable progress notification', async () => {
+        const { loginCommand, uriHandler } = registerLogin();
+        const login = loginCommand();
+        await vi.waitFor(() => expect(vscodeState.openExternal).toHaveBeenCalled());
+
+        expect(vscodeState.withProgress).toHaveBeenCalledWith(
+            expect.objectContaining({
+                cancellable: true,
+                location: 15,
+                title: 'Waiting for you to log in in the browser…',
+            }),
+            expect.any(Function),
+        );
+        const opened = new URL(vscodeState.openExternal.mock.calls[0][0].toString());
+        expect(opened.origin + opened.pathname).toBe('https://autojudge.io/teams/login');
+        expect(opened.searchParams.get('client')).toBe('vscode');
+        expect(opened.searchParams.get('state')).toMatch(/^[A-Za-z0-9_-]{43}$/);
+
+        // Finish the pending login so no timeout is left running.
+        contestSession.redeemAndLoadContest.mockRejectedValue(new Error('stop'));
+        uriHandler.handleUri({ path: '/auth', query: `code=handoff-code&state=${openedState()}` });
+        await login;
+    });
+
+    it('uses the configured web URL', async () => {
+        vscodeState.webUrl = 'https://contest.example.test/aj';
+        const { loginCommand, uriHandler } = registerLogin();
+        const login = loginCommand();
+        await vi.waitFor(() => expect(vscodeState.openExternal).toHaveBeenCalled());
+
+        const opened = new URL(vscodeState.openExternal.mock.calls[0][0].toString());
+        expect(opened.origin + opened.pathname).toBe('https://contest.example.test/aj/teams/login');
+
+        contestSession.redeemAndLoadContest.mockRejectedValue(new Error('stop'));
+        uriHandler.handleUri({ path: '/auth', query: `code=handoff-code&state=${openedState()}` });
+        await login;
+    });
+
+    it('redeems the code from a matching callback and logs in', async () => {
+        contestSession.redeemAndLoadContest.mockResolvedValue({
+            contest: { name: 'Regional Final', teams: [] },
             problems: [],
             submissions: [],
             team: { name: 'Bits' },
-            contest: { name: 'Regional Final', teams: [] },
             token: 'team-jwt-token',
         });
+        const { loginCommand, uriHandler } = registerLogin();
+        const login = loginCommand();
+        await vi.waitFor(() => expect(vscodeState.openExternal).toHaveBeenCalled());
 
-        await loginCommand();
+        uriHandler.handleUri({
+            path: '/auth',
+            query: `code=handoff-code&state=${openedState()}`,
+        });
+        await login;
 
-        expect(vscodeState.showInputBox).toHaveBeenNthCalledWith(1, expect.objectContaining({
-            placeHolder: 'team-code',
-            prompt: 'Enter your AutoJudge team code (printed on your team card).',
+        expect(contestSession.redeemAndLoadContest).toHaveBeenCalledWith(expect.objectContaining({
+            code: 'handoff-code',
         }));
-        expect(contestSession.loginAndLoadContest).toHaveBeenCalledWith(expect.objectContaining({
-            password: '123456',
-            teamId: 'k3m9x2p7q8w1a',
-        }));
+        expect(vscodeState.executeCommand).toHaveBeenCalledWith('setContext', 'autojudgeContest.state', 'loggedIn');
+        expect(vscodeState.showErrorMessage).not.toHaveBeenCalled();
     });
 
-    it('validates the team code in the input box and rejects a legacy six-character hash', async () => {
-        const loginCommand = registerLoginCommand();
-        vscodeState.showInputBox.mockResolvedValueOnce('ab12cd');
+    it('ignores a callback with a mismatched or missing state, tells the user, and keeps waiting', async () => {
+        contestSession.redeemAndLoadContest.mockResolvedValue({
+            contest: { name: 'Regional Final', teams: [] },
+            problems: [],
+            submissions: [],
+            team: { name: 'Bits' },
+            token: 'team-jwt-token',
+        });
+        const { loginCommand, uriHandler } = registerLogin();
+        const login = loginCommand();
+        await vi.waitFor(() => expect(vscodeState.openExternal).toHaveBeenCalled());
 
-        await loginCommand();
+        uriHandler.handleUri({ path: '/auth', query: 'code=handoff-code&state=forged' });
+        uriHandler.handleUri({ path: '/auth', query: 'code=handoff-code' });
 
-        const { validateInput } = vscodeState.showInputBox.mock.calls[0][0];
-        expect(validateInput('ab12cd')).toMatch(/13-character team code/);
-        expect(validateInput('  K3M9X2P7Q8W1A ')).toBeNull();
-        expect(contestSession.loginAndLoadContest).not.toHaveBeenCalled();
-    });
+        expect(contestSession.redeemAndLoadContest).not.toHaveBeenCalled();
+        expect(vscodeState.showErrorMessage).toHaveBeenCalledTimes(2);
+        expect(outputChannel.appendLine).toHaveBeenCalledWith(expect.stringContaining('did not match'));
 
-    it('cancels the login when the team code is blank after trimming', async () => {
-        const loginCommand = registerLoginCommand();
-        vscodeState.showInputBox.mockResolvedValueOnce('   ');
-
-        await loginCommand();
-
-        expect(vscodeState.showInputBox).toHaveBeenCalledTimes(1);
-        expect(contestSession.loginAndLoadContest).not.toHaveBeenCalled();
+        uriHandler.handleUri({ path: '/auth', query: `code=real-code&state=${openedState()}` });
+        await login;
+        expect(contestSession.redeemAndLoadContest).toHaveBeenCalledWith(expect.objectContaining({ code: 'real-code' }));
     });
 });

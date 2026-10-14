@@ -1,5 +1,5 @@
 import { clearStoredSession, readStoredSession, writeStoredSession } from './session-store.js';
-import { getContestDetails, getContestProblems, getCurrentTeam, getSubmissions, loginTeam, submitSolution as submitContestSolution } from './contest-api.js';
+import { getContestDetails, getContestProblems, getCurrentTeam, getSubmissions, isSessionEnded, redeemHandoffCode, submitSolution as submitContestSolution } from './contest-api.js';
 import { isPendingSubmission } from '../utils/submission-status.js';
 import { resolveRouteId } from '../utils/public-id.js';
 import config from '../utils/config.js';
@@ -9,13 +9,14 @@ export { clearStoredSession, readStoredSession, writeStoredSession };
 const DEFAULT_SUBMISSION_POLL_TIMEOUT_MS = 2 * 60 * 1000;
 
 /**
- * Exchange team credentials for a JWT, persist it, and load the initial contest snapshot.
- * @param {{ baseUrl: string, context: import('vscode').ExtensionContext | { secrets: object, globalState: object }, password: string, teamId: string }} options
+ * Redeem the one-time code the browser handed over, persist the resulting team
+ * token, and load the initial contest snapshot.
+ * @param {{ baseUrl: string, code: string, context: import('vscode').ExtensionContext | { secrets: object, globalState: object } }} options
  * @returns {Promise<{ token: string, team: object, problems: object[], submissions: object[] }>}
  */
-export async function loginAndLoadContest({ baseUrl, context, password, teamId }) {
-    const { token } = await loginTeam({ baseUrl, password, teamId });
-    await writeStoredSession(context, { teamId, token });
+export async function redeemAndLoadContest({ baseUrl, code, context }) {
+    const { token } = await redeemHandoffCode({ baseUrl, code });
+    await writeStoredSession(context, { token });
 
     return loadContestSnapshot({ baseUrl, token });
 }
@@ -38,7 +39,9 @@ export async function restoreContestSession({ baseUrl, context }) {
         });
     }
     catch (error) {
-        if (error.statusCode === 400 || error.statusCode === 401) {
+        // SESSION_ENDED is reported to the caller, which clears the token and
+        // tells the user; any other rejected token is dropped silently.
+        if (!isSessionEnded(error) && (error.statusCode === 400 || error.statusCode === 401)) {
             await clearStoredSession(context);
             return null;
         }
@@ -69,7 +72,9 @@ export async function refreshContestDetails({ baseUrl, contest, context }) {
         return mergeContestSnapshot(contest, detailedContest);
     }
     catch (error) {
-        if (error.statusCode === 400 || error.statusCode === 401) {
+        // SESSION_ENDED is reported to the caller, which clears the token and
+        // tells the user; any other rejected token is dropped silently.
+        if (!isSessionEnded(error) && (error.statusCode === 400 || error.statusCode === 401)) {
             await clearStoredSession(context);
             return null;
         }

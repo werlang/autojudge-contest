@@ -58,7 +58,7 @@ beforeEach(() => {
 });
 
 describe('contest session flow', () => {
-    it('logs a team in, persists the session token, and loads the contest snapshot', async () => {
+    it('redeems the hand-off code, persists the session token, and loads the contest snapshot', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-05-29T12:00:00.000Z'));
 
@@ -112,19 +112,20 @@ describe('contest session flow', () => {
             }));
 
         const session = await import('../src/services/contest-session.js');
-        const result = await session.loginAndLoadContest({
+        const result = await session.redeemAndLoadContest({
             baseUrl: 'https://api.autojudge.test/base',
+            code: 'handoff-code-from-the-browser',
             context,
-            password: '123456',
-            teamId: 'k3m9x2p7q8w1a',
         });
 
-        expect(fetchMock).toHaveBeenNthCalledWith(1, 'https://api.autojudge.test/base/teams/k3m9x2p7q8w1a/login', expect.objectContaining({
+        expect(fetchMock).toHaveBeenNthCalledWith(1, 'https://api.autojudge.test/base/teams/session/redeem', expect.objectContaining({
+            body: JSON.stringify({ code: 'handoff-code-from-the-browser' }),
             method: 'POST',
             headers: expect.objectContaining({
-                Authorization: 'Bearer 123456',
+                'Content-Type': 'application/json',
             }),
         }));
+        expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty('Authorization');
         expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://api.autojudge.test/base/teams', expect.objectContaining({
             method: 'GET',
             headers: expect.objectContaining({
@@ -194,7 +195,6 @@ describe('contest session flow', () => {
 
         const storedSession = await session.readStoredSession(context);
         expect(storedSession).toEqual({
-            teamId: 'k3m9x2p7q8w1a',
             token: 'team-jwt-token',
         });
 
@@ -206,7 +206,6 @@ describe('contest session flow', () => {
         const session = await import('../src/services/contest-session.js');
 
         await session.writeStoredSession(context, {
-            teamId: 'ghost-team',
             token: 'expired-token',
         });
 
@@ -221,12 +220,60 @@ describe('contest session flow', () => {
         expect(await session.readStoredSession(context)).toBeNull();
     });
 
+    it('does not store a token when the hand-off code is rejected', async () => {
+        const context = createContext();
+        const session = await import('../src/services/contest-session.js');
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({
+            code: 'HANDOFF_INVALID',
+            message: 'This sign-in link is invalid or has expired.',
+        }, 400));
+
+        await expect(session.redeemAndLoadContest({
+            baseUrl: 'https://api.autojudge.test',
+            code: 'used-code',
+            context,
+        })).rejects.toMatchObject({ code: 'HANDOFF_INVALID', statusCode: 400 });
+
+        expect(await session.readStoredSession(context)).toBeNull();
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports SESSION_ENDED on restore so the caller can clear the token and tell the user', async () => {
+        const context = createContext();
+        const session = await import('../src/services/contest-session.js');
+
+        await session.writeStoredSession(context, { token: 'old-token' });
+        fetchMock.mockResolvedValueOnce(jsonResponse({
+            code: 'SESSION_ENDED',
+            message: 'Your team session has ended. Log in again.',
+        }, 401));
+
+        await expect(session.restoreContestSession({
+            baseUrl: 'https://api.autojudge.test',
+            context,
+        })).rejects.toMatchObject({ code: 'SESSION_ENDED', statusCode: 401 });
+    });
+
+    it('reports SESSION_ENDED on a standings refresh instead of returning null', async () => {
+        const context = createContext();
+        const session = await import('../src/services/contest-session.js');
+
+        await session.writeStoredSession(context, { token: 'old-token' });
+        fetchMock.mockResolvedValueOnce(jsonResponse({ code: 'SESSION_ENDED', message: 'ended' }, 401));
+
+        await expect(session.refreshContestDetails({
+            baseUrl: 'https://api.autojudge.test',
+            contest: { publicId: 'k3m9x2p7q8w1a' },
+            context,
+        })).rejects.toMatchObject({ code: 'SESSION_ENDED' });
+    });
+
     it('submits a solution with the stored contest token', async () => {
         const context = createContext();
         const session = await import('../src/services/contest-session.js');
 
         await session.writeStoredSession(context, {
-            teamId: 'k3m9x2p7q8w1a',
             token: 'team-jwt-token',
         });
 
@@ -271,7 +318,6 @@ describe('contest session flow', () => {
         const session = await import('../src/services/contest-session.js');
 
         await session.writeStoredSession(context, {
-            teamId: 'k3m9x2p7q8w1a',
             token: 'team-jwt-token',
         });
 
@@ -336,7 +382,6 @@ describe('contest session flow', () => {
         const session = await import('../src/services/contest-session.js');
 
         await session.writeStoredSession(context, {
-            teamId: 'k3m9x2p7q8w1a',
             token: 'team-jwt-token',
         });
 
@@ -390,7 +435,7 @@ describe('contest route ids', () => {
     it('refreshes contest details through the public id', async () => {
         const session = await import('../src/services/contest-session.js');
         const context = createContext();
-        await session.writeStoredSession(context, { teamId: 'k3m9x2p7q8w1a', token: 'team-jwt-token' });
+        await session.writeStoredSession(context, { token: 'team-jwt-token' });
 
         fetchMock.mockResolvedValueOnce(jsonResponse({ contest: { publicId: 'k3m9x2p7q8w1a', name: 'Regional Final', duration: 180 } }));
         await session.refreshContestDetails({
