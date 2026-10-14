@@ -299,6 +299,22 @@ describe('contest controller', () => {
         expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(snapshot);
     });
 
+    it('shows the session-ended prompt again after the user starts a new login', async () => {
+        sessionApi.restoreContestSession.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
+        const controller = buildController();
+
+        await controller.refreshTree();
+        await flushPromises();
+        expect(showWarningMessage).toHaveBeenCalledTimes(1);
+
+        browserLogin.waitForHandoffCode.mockRejectedValue(new BrowserLoginError(LOGIN_FAILURE.CANCELLED, 'Login cancelled.'));
+        await controller.loginTeam();
+
+        await controller.refreshTree();
+        await flushPromises();
+        expect(showWarningMessage).toHaveBeenCalledTimes(2);
+    });
+
     it('handles an ended session found by the timed standings refresh', async () => {
         vi.useFakeTimers();
         const snapshot = createSnapshot();

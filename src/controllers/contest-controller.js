@@ -349,6 +349,9 @@ export function createContestController({
          * @returns {Promise<object | null>}
          */
         async loginTeam() {
+            // A new login starts a new session, so a later session end may prompt again.
+            sessionEndedPromptShown = false;
+
             try {
                 const code = await withCancellableProgress(
                     WAITING_FOR_BROWSER_MESSAGE,
