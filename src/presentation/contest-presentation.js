@@ -137,18 +137,33 @@ export function formatProblemScore(ms) {
     return `${minutes} min`;
 }
 
+/**
+ * Render the contest dashboard as a Markdown metrics table. A contest without a
+ * start time has not started: its end and remaining time are shown as not started
+ * rather than computed from `new Date(null)` (1970) or reported as ended.
+ * @param {object} contest
+ * @returns {string}
+ */
 export function renderContestDashboard(contest) {
-    const endTime = new Date(new Date(contest.startTime).getTime() + contest.duration * 60 * 1000).toISOString();
-    const remainingMs = new Date(endTime).getTime() - Date.now();
-    const remainingTime = remainingMs > 0 ? formatProblemScore(remainingMs) : 'Ended';
+    const hasStarted = Boolean(contest.startTime);
+    const startTime = hasStarted ? `\`${contest.startTime}\`` : 'Not started';
+    let endTime = 'Not started';
+    let remainingTime = 'Not started';
+
+    if (hasStarted) {
+        const endTimestamp = new Date(contest.startTime).getTime() + contest.duration * 60 * 1000;
+        const remainingMs = endTimestamp - Date.now();
+        endTime = `\`${new Date(endTimestamp).toISOString()}\``;
+        remainingTime = remainingMs > 0 ? formatProblemScore(remainingMs) : 'Ended';
+    }
 
     const lines = [
         `# 🏆 Contest ${contest.name.trim()}`,
         '',
         `| **Metric** | **Value** |`,
         `| :--- | :--- |`,
-        `| **📅 Start Time** | \`${contest.startTime}\` |`,
-        `| **🏁 End Time** | \`${endTime}\` |`,
+        `| **📅 Start Time** | ${startTime} |`,
+        `| **🏁 End Time** | ${endTime} |`,
         `| **⏳ Remaining Time** | **${remainingTime}** |`,
         `| **⏱️ Duration** | ${contest.duration} minutes |`,
         `| **⚠️ Penalty Time** | ${contest.penaltyTime} minutes |`,

@@ -523,6 +523,29 @@ describe('contest controller', () => {
         expect(result).toEqual(contest);
     });
 
+    it('shows Not started in the contest dashboard when the contest has no start time', async () => {
+        const document = { uri: 'file:///workspace/.autojudge-state/contest-dashboards/contest-k3m9x2p7q8w1a.md' };
+        openTextDocument.mockResolvedValue(document);
+
+        await buildController().openContestDashboard({
+            publicId: 'k3m9x2p7q8w1a',
+            name: 'Regional Final',
+            duration: 180,
+            startTime: null,
+            penaltyTime: 20,
+            freezeTime: 60,
+            teams: [],
+            problems: [],
+        });
+
+        const dashboard = fsState.writeFile.mock.calls.at(-1)[1];
+        expect(dashboard).toContain('| **📅 Start Time** | Not started |');
+        expect(dashboard).toContain('| **🏁 End Time** | Not started |');
+        expect(dashboard).toContain('| **⏳ Remaining Time** | **Not started** |');
+        expect(dashboard).not.toContain('1970');
+        expect(dashboard).not.toContain('Ended');
+    });
+
     it('opens a submission details preview from the clicked submission item', async () => {
         const document = { uri: 'file:///workspace/.autojudge-state/submission-details/submission-12.md' };
         openTextDocument.mockResolvedValue(document);
