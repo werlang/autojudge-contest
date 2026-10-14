@@ -1,10 +1,10 @@
 # AutoJudge Contest
 
+Participate in active AutoJudge contests, view problem descriptions, export public testcases, submit solutions, and track live standings directly inside Visual Studio Code.
+
 <p align="center">
   <img src="media/contest.gif" alt="AutoJudge Contest In action">
 </p>
-
-Participate in active AutoJudge contests, view problem descriptions, export public testcases, submit solutions, and track live standings directly inside Visual Studio Code.
 
 ---
 
