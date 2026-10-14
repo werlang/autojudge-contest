@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { createContestController } from '../controllers/contest-controller.js';
 import { COMMANDS } from '../constants.js';
 import * as contestSession from '../services/contest-session.js';
+import { normalizeTeamCode } from '../services/contest-api.js';
 import { ContestSubmissionWorkspace } from '../workspace/contest-submission-workspace.js';
 import config from '../utils/config.js';
 
@@ -23,12 +24,13 @@ export function registerContestCommands({ context, teamsStandingsProvider, treeP
         openTextDocument: (options) => vscode.workspace.openTextDocument(options),
         outputChannel,
         promptTeamCredentials: async () => {
-            const teamId = await vscode.window.showInputBox({
+            const teamInput = await vscode.window.showInputBox({
                 ignoreFocusOut: true,
-                placeHolder: 'team-hash-or-id',
-                prompt: 'Enter the AutoJudge contest team id or hash.',
+                placeHolder: 'team-code',
+                prompt: 'Enter your AutoJudge team code (printed on your team card).',
                 title: 'AutoJudge Contest Login',
             });
+            const teamId = normalizeTeamCode(teamInput);
 
             if (!teamId) {
                 return null;
