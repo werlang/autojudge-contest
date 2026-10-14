@@ -1,3 +1,5 @@
+import { resolveRouteId } from './public-id.js';
+
 /**
  * Normalize, sort, and enrich contest standings teams for shared controller and
  * provider use.
@@ -32,9 +34,8 @@ export function normalizeStandingTeam(team) {
 }
 
 /**
- * Extract the solved problem labels from one standings entry. Matches on the
- * `solvedProblemIds` public keys when the server sends them, otherwise on the
- * legacy numeric `solvedProblems` list.
+ * Extract the solved problem labels from one standings entry by matching the
+ * team's `solvedProblemIds` against each problem's `publicId`.
  * @param {object | undefined | null} team
  * @param {object[] | undefined | null} problems
  * @returns {string[]}
@@ -81,35 +82,29 @@ export function normalizeStandingScore(team) {
  * @returns {string}
  */
 function resolveStandingTeamName(team) {
-    return team?.name?.toString().trim() || `Team #${team?.id ?? '?'}`;
+    return team?.name?.toString().trim() || 'Unnamed team';
 }
 
 /**
- * Check whether one contest problem is in the team's solved list. Public keys
- * are used when `solvedProblemIds` is present, numeric ids otherwise.
+ * Check whether one contest problem is in the team's `solvedProblemIds` list.
  * @param {object | undefined | null} team
  * @param {object | undefined | null} problem
  * @returns {boolean}
  */
 function isSolvedProblem(team, problem) {
-    const usesPublicIds = Array.isArray(team?.solvedProblemIds);
-    const problemKey = usesPublicIds ? problem?.publicId : problem?.id;
+    const problemId = resolveRouteId(problem);
 
-    return problemKey != null && resolveSolvedProblemList(team).includes(problemKey);
+    return problemId != null && resolveSolvedProblemList(team).includes(problemId);
 }
 
 /**
- * Return the solved list in the shape the server sent: public ids when
- * `solvedProblemIds` is present, legacy numeric ids otherwise.
+ * Return the team's solved public ids, or an empty list when the server did not
+ * send `solvedProblemIds`.
  * @param {object | undefined | null} team
- * @returns {Array<string | number>}
+ * @returns {string[]}
  */
 function resolveSolvedProblemList(team) {
-    if (Array.isArray(team?.solvedProblemIds)) {
-        return team.solvedProblemIds;
-    }
-
-    return Array.isArray(team?.solvedProblems) ? team.solvedProblems : [];
+    return Array.isArray(team?.solvedProblemIds) ? team.solvedProblemIds : [];
 }
 
 /**

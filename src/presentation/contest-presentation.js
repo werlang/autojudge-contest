@@ -207,7 +207,7 @@ export function renderTeamStandingDetails(team, currentSnapshot) {
  */
 function getProblemTitle(problem) {
     const title = problem?.title?.toString().trim();
-    return title || `Problem ${problem?.id ?? ''}`.trim();
+    return title || `Problem ${problem?.publicId ?? ''}`.trim();
 }
 
 /**
@@ -235,16 +235,17 @@ function appendSubmissionField(lines, label, value) {
 
 /**
  * Build a compact submission problem label for output-channel summaries.
- * @param {{ id?: string | number, title?: string } | undefined | null} problem
+ * @param {{ publicId?: string, title?: string } | undefined | null} problem
  * @returns {string}
  */
 function buildSubmissionProblemLabel(problem) {
     const title = problem?.title?.toString().trim();
-    const id = problem?.id != null ? ` (#${problem.id})` : '';
+    const publicId = problem?.publicId?.toString().trim();
+    const suffix = publicId ? ` (${publicId})` : '';
 
     if (title) {
-        return `${title}${id}`;
+        return `${title}${suffix}`;
     }
 
-    return id ? `Problem${id}` : '';
+    return publicId ? `Problem${suffix}` : '';
 }

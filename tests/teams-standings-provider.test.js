@@ -4,72 +4,7 @@ import { COMMANDS, TREE_CONTEXT } from '../src/constants.js';
 import { TeamsStandingsProvider } from '../src/providers/teams-tree-provider.js';
 
 describe('teams standings provider', () => {
-    it('renders teams sorted by descending score and wires the open-team command', () => {
-        const provider = new TeamsStandingsProvider();
-
-        provider.setSnapshot({
-            problems: [],
-            submissions: [],
-            team: {
-                contest: {
-                    id: 4,
-                    name: 'Regional Final',
-                    teams: [
-                        {
-                            id: 9,
-                            name: 'Bits',
-                            score: 200000,
-                            solvedProblems: [1],
-                        },
-                        {
-                            id: 12,
-                            name: 'Array Ninjas',
-                            score: 350000,
-                            solvedProblems: [1, 2],
-                        },
-                    ],
-                },
-                name: 'Bits',
-            },
-            contest: {
-                id: 4,
-                name: 'Regional Final',
-                teams: [
-                    {
-                        id: 9,
-                        name: 'Bits',
-                        score: 200000,
-                        solvedProblems: [1],
-                    },
-                    {
-                        id: 12,
-                        name: 'Array Ninjas',
-                        score: 350000,
-                        solvedProblems: [1, 2],
-                    },
-                ],
-            },
-            token: 'jwt-token',
-        });
-
-        expect(provider.getChildren()).toEqual([
-            expect.objectContaining({
-                command: expect.objectContaining({
-                    command: COMMANDS.OPEN_TEAM_STANDING,
-                }),
-                contextValue: TREE_CONTEXT.STANDING_TEAM,
-                description: '2 solved | 5.8 min',
-                label: 'Array Ninjas',
-            }),
-            expect.objectContaining({
-                contextValue: TREE_CONTEXT.STANDING_TEAM,
-                description: '1 solved | 3.3 min',
-                label: 'Bits',
-            }),
-        ]);
-    });
-
-    it('counts solved problems from solvedProblemIds when the server omits numeric ids', () => {
+    it('renders teams sorted by descending score with solved counts from solvedProblemIds', () => {
         const provider = new TeamsStandingsProvider();
 
         provider.setSnapshot({
@@ -101,8 +36,49 @@ describe('teams standings provider', () => {
         });
 
         expect(provider.getChildren()).toEqual([
-            expect.objectContaining({ description: '2 solved | 5.8 min', label: 'Array Ninjas' }),
-            expect.objectContaining({ description: '1 solved | 3.3 min', label: 'Bits' }),
+            expect.objectContaining({
+                command: expect.objectContaining({
+                    command: COMMANDS.OPEN_TEAM_STANDING,
+                }),
+                contextValue: TREE_CONTEXT.STANDING_TEAM,
+                description: '2 solved | 5.8 min',
+                label: 'Array Ninjas',
+            }),
+            expect.objectContaining({
+                contextValue: TREE_CONTEXT.STANDING_TEAM,
+                description: '1 solved | 3.3 min',
+                label: 'Bits',
+            }),
+        ]);
+    });
+
+    it('does not count a legacy numeric solvedProblems list as solved problems', () => {
+        const provider = new TeamsStandingsProvider();
+
+        provider.setSnapshot({
+            problems: [],
+            submissions: [],
+            team: {
+                contest: { publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' },
+                name: 'Bits',
+            },
+            contest: {
+                publicId: 'k3m9x2p7q8w1a',
+                name: 'Regional Final',
+                teams: [
+                    {
+                        scoreboardId: 'sb-bits-91cd',
+                        name: 'Bits',
+                        score: 200000,
+                        solvedProblems: [1],
+                    },
+                ],
+            },
+            token: 'jwt-token',
+        });
+
+        expect(provider.getChildren()).toEqual([
+            expect.objectContaining({ description: '0 solved | 3.3 min', label: 'Bits' }),
         ]);
     });
 
@@ -114,13 +90,13 @@ describe('teams standings provider', () => {
             submissions: [],
             team: {
                 contest: {
-                    id: 4,
+                    publicId: 'k3m9x2p7q8w1a',
                     name: 'Regional Final',
                 },
                 name: 'Bits',
             },
             contest: {
-                id: 4,
+                publicId: 'k3m9x2p7q8w1a',
                 name: 'Regional Final',
             },
             token: 'jwt-token',

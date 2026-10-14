@@ -54,7 +54,7 @@ export class ContestTreeProvider {
 
     /**
      * Replace the visible contest snapshot and refresh the tree.
-     * @param {{ problems: object[], submissions: object[], team: { contest: { id: number, name: string }, name: string }, token: string } | null} snapshot
+     * @param {{ problems: object[], submissions: object[], team: { contest: { publicId: string, name: string }, name: string }, token: string } | null} snapshot
      */
     setSnapshot(snapshot) {
         this.snapshot = snapshot;

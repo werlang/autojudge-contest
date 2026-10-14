@@ -26,57 +26,14 @@ async function flushPromises(turns = 10) {
     }
 }
 
-function createSnapshot() {
-    const contest = {
-        id: 4,
-        name: 'Regional Final',
-        problems: [
-            { id: 1, order: 1, title: 'A + B' },
-            { id: 2, order: 2, title: 'Binary Search' },
-        ],
-        teams: [
-            {
-                id: 12,
-                name: 'Array Ninjas',
-                score: 350000,
-                solvedProblems: [1, 2],
-            },
-            {
-                id: 9,
-                name: 'Bits',
-                score: 200000,
-                solvedProblems: [1],
-            },
-        ],
-    };
-
-    return {
-        problems: [{
-            id: 1,
-            hash: 'prob-a',
-            input: ['1 2\n'],
-            output: ['3\n'],
-            title: 'A + B',
-        }],
-        submissions: [],
-        team: {
-            contest,
-            name: 'Bits',
-        },
-        contest,
-        token: 'team-jwt-token',
-    };
-}
-
 /**
- * Build a snapshot whose payload carries only public keys, the shape newer
- * servers send: publicId on contests and problems, solvedProblemIds and
- * scoreboardId on teams, and no numeric ids anywhere.
+ * Build a snapshot with the only shape the server sends: publicId on contests
+ * and problems, solvedProblemIds and scoreboardId on teams, and no numeric ids.
  * @returns {object}
  */
-function createPublicIdSnapshot() {
+function createSnapshot() {
     const problems = [
-        { publicId: 'pa1b2c3d4e5f6', order: 1, title: 'A + B' },
+        { publicId: 'pa1b2c3d4e5f6', order: 1, title: 'A + B', input: ['1 2\n'], output: ['3\n'] },
         { publicId: 'pb2c3d4e5f6a1', order: 2, title: 'Binary Search' },
     ];
     const contest = {
@@ -179,7 +136,7 @@ describe('contest controller', () => {
 
     it('logs in with prompted credentials and pushes the snapshot into the tree', async () => {
         const snapshot = createSnapshot();
-        promptTeamCredentials.mockResolvedValue({ password: '123456', teamId: 'teamhash9' });
+        promptTeamCredentials.mockResolvedValue({ password: '123456', teamId: 'k3m9x2p7q8w1a' });
         sessionApi.loginAndLoadContest.mockResolvedValue(snapshot);
 
         const controller = createContestController({
@@ -206,7 +163,7 @@ describe('contest controller', () => {
             baseUrl: 'https://api.autojudge.test',
             context,
             password: '123456',
-            teamId: 'teamhash9',
+            teamId: 'k3m9x2p7q8w1a',
         });
         expect(treeProvider.setSnapshot).toHaveBeenCalledWith(snapshot);
         expect(teamsStandingsProvider.setSnapshot).toHaveBeenCalledWith(snapshot);
@@ -300,9 +257,8 @@ describe('contest controller', () => {
 
         await controller.openProblem({
             description: 'Add two integers.',
-            hash: 'prob-a',
-            id: 1,
             order: 1,
+            publicId: 'pa1b2c3d4e5f6',
             title: 'A + B',
         });
 
@@ -322,7 +278,7 @@ describe('contest controller', () => {
     });
 
     it('opens a contest dashboard preview from the contest item', async () => {
-        const document = { uri: 'file:///workspace/.autojudge-state/contest-dashboards/contest-4.md' };
+        const document = { uri: 'file:///workspace/.autojudge-state/contest-dashboards/contest-k3m9x2p7q8w1a.md' };
         openTextDocument.mockResolvedValue(document);
 
         const controller = createContestController({
@@ -344,7 +300,7 @@ describe('contest controller', () => {
         });
 
         const contest = {
-            id: 4,
+            publicId: 'k3m9x2p7q8w1a',
             name: 'Regional Final',
             duration: 180,
             startTime: '2026-05-28T03:00:00.000Z',
@@ -356,11 +312,11 @@ describe('contest controller', () => {
             recursive: true,
         });
         expect(fsState.writeFile).toHaveBeenCalledWith(
-            '/workspace/.autojudge-state/contest-dashboards/contest-4.md',
+            '/workspace/.autojudge-state/contest-dashboards/contest-k3m9x2p7q8w1a.md',
             expect.stringContaining('# 🏆 Contest Dashboard: Regional Final'),
             { encoding: 'utf-8' }
         );
-        expect(openTextDocument).toHaveBeenCalledWith('/workspace/.autojudge-state/contest-dashboards/contest-4.md');
+        expect(openTextDocument).toHaveBeenCalledWith('/workspace/.autojudge-state/contest-dashboards/contest-k3m9x2p7q8w1a.md');
         expect(executeCommand).toHaveBeenCalledWith('markdown.showPreview', document.uri, expect.any(Object));
         expect(result).toEqual(contest);
     });
@@ -390,7 +346,7 @@ describe('contest controller', () => {
 
         const submission = {
             id: 12,
-            problem: { id: 1, title: 'A + B' },
+            problem: { publicId: 'pa1b2c3d4e5f6', title: 'A + B' },
             score: 90000,
             status: 'ACCEPTED',
             submittedAt: '2026-05-28T03:10:00.000Z',
@@ -414,7 +370,7 @@ describe('contest controller', () => {
     it('opens a team standing preview from the clicked standing item', async () => {
         const snapshot = createSnapshot();
         treeProvider.getSnapshot.mockReturnValue(snapshot);
-        const document = { uri: 'file:///workspace/.autojudge-state/team-details/team-12.md' };
+        const document = { uri: 'file:///workspace/.autojudge-state/team-details/team-sb-ninjas-7f3a.md' };
         openTextDocument.mockResolvedValue(document);
 
         const controller = createContestController({
@@ -443,50 +399,17 @@ describe('contest controller', () => {
             recursive: true,
         });
         expect(fsState.writeFile).toHaveBeenCalledWith(
-            '/workspace/.autojudge-state/team-details/team-12.md',
+            '/workspace/.autojudge-state/team-details/team-sb-ninjas-7f3a.md',
             expect.stringContaining('# 👥 Team Standing: Array Ninjas'),
             { encoding: 'utf-8' }
         );
-        expect(openTextDocument).toHaveBeenCalledWith('/workspace/.autojudge-state/team-details/team-12.md');
+        expect(openTextDocument).toHaveBeenCalledWith('/workspace/.autojudge-state/team-details/team-sb-ninjas-7f3a.md');
         expect(executeCommand).toHaveBeenCalledWith('markdown.showPreview', document.uri, expect.any(Object));
         expect(result).toEqual(team);
     });
 
-    it('names the contest dashboard preview by public id when the server omits numeric ids', async () => {
-        const snapshot = createPublicIdSnapshot();
-        const document = { uri: 'file:///workspace/.autojudge-state/contest-dashboards/contest-k3m9x2p7q8w1a.md' };
-        openTextDocument.mockResolvedValue(document);
-
-        const controller = createContestController({
-            context,
-            executeCommand,
-            openTextDocument,
-            outputChannel,
-            promptTeamCredentials,
-            resolvePollIntervalMs,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-        });
-
-        await controller.openContestDashboard(snapshot.contest);
-
-        expect(fsState.writeFile).toHaveBeenCalledWith(
-            '/workspace/.autojudge-state/contest-dashboards/contest-k3m9x2p7q8w1a.md',
-            expect.stringContaining('# 🏆 Contest Regional Final'),
-            { encoding: 'utf-8' }
-        );
-        expect(openTextDocument).toHaveBeenCalledWith('/workspace/.autojudge-state/contest-dashboards/contest-k3m9x2p7q8w1a.md');
-    });
-
     it('names the team standing preview by scoreboard id and ranks it from public-id standings', async () => {
-        const snapshot = createPublicIdSnapshot();
+        const snapshot = createSnapshot();
         treeProvider.getSnapshot.mockReturnValue(snapshot);
         openTextDocument.mockResolvedValue({ uri: 'file:///workspace/.autojudge-state/team-details/team-sb-bits-91cd.md' });
 
@@ -527,7 +450,7 @@ describe('contest controller', () => {
         const createdSubmission = {
             id: 27,
             problem: {
-                id: 1,
+                publicId: 'pa1b2c3d4e5f6',
                 title: 'A + B',
             },
             status: 'PENDING',
@@ -563,7 +486,7 @@ describe('contest controller', () => {
             code: Buffer.from('#include <iostream>\nint main() { return 0; }\n', 'utf-8').toString('base64'),
             context,
             filename: 'main.cpp',
-            problemId: 1,
+            problemId: 'pa1b2c3d4e5f6',
         });
         expect(treeProvider.setSnapshot).toHaveBeenCalledWith({
             ...snapshot,
@@ -578,7 +501,7 @@ describe('contest controller', () => {
     });
 
     it('submits to a public-id-only problem and keeps the public id on the local submission', async () => {
-        const snapshot = createPublicIdSnapshot();
+        const snapshot = createSnapshot();
         const [publicProblem] = snapshot.problems;
         treeProvider.getSnapshot.mockReturnValue(snapshot);
         submissionWorkspace.readActiveSourceFile.mockResolvedValue({
@@ -618,7 +541,7 @@ describe('contest controller', () => {
         const createdSubmission = {
             id: 27,
             problem: {
-                id: 1,
+                publicId: 'pa1b2c3d4e5f6',
                 title: 'A + B',
             },
             status: 'PENDING',
@@ -627,7 +550,7 @@ describe('contest controller', () => {
         const finalSubmission = {
             id: 27,
             problem: {
-                id: 1,
+                publicId: 'pa1b2c3d4e5f6',
                 title: 'A + B',
             },
             status: 'ACCEPTED',
@@ -690,7 +613,7 @@ describe('contest controller', () => {
         const createdSubmission = {
             id: 27,
             problem: {
-                id: 1,
+                publicId: 'pa1b2c3d4e5f6',
                 title: 'A + B',
             },
             status: 'PENDING',
@@ -699,7 +622,7 @@ describe('contest controller', () => {
         const finalSubmission = {
             id: 27,
             problem: {
-                id: 1,
+                publicId: 'pa1b2c3d4e5f6',
                 title: 'A + B',
             },
             status: 'ACCEPTED',
@@ -763,7 +686,7 @@ describe('contest controller', () => {
         const createdSubmission = {
             id: 27,
             problem: {
-                id: 1,
+                publicId: 'pa1b2c3d4e5f6',
                 title: 'A + B',
             },
             status: 'PENDING',
@@ -885,8 +808,7 @@ describe('contest controller', () => {
         });
 
         const selectedProblem = {
-            id: 1,
-            hash: 'prob-a',
+            publicId: 'pa1b2c3d4e5f6',
             input: '1 2\n',
             output: '3\n',
             title: 'A + B',
@@ -923,8 +845,7 @@ describe('contest controller', () => {
         });
 
         const result = await controller.exportPublicCases({
-            id: 1,
-            hash: 'prob-a',
+            publicId: 'pa1b2c3d4e5f6',
             title: 'A + B',
         });
 
@@ -938,67 +859,6 @@ describe('contest controller', () => {
         vi.useFakeTimers();
 
         const snapshot = createSnapshot();
-        const refreshedContest = {
-            ...snapshot.contest,
-            teams: [
-                {
-                    id: 12,
-                    name: 'Array Ninjas',
-                    score: 360,
-                    problems: [
-                        { id: 1, order: 1, solved: true, title: 'A + B' },
-                        { id: 2, order: 2, solved: true, title: 'Binary Search' },
-                    ],
-                },
-            ],
-        };
-        const refreshedSnapshot = {
-            ...snapshot,
-            team: {
-                ...snapshot.team,
-            },
-            contest: refreshedContest,
-        };
-        promptTeamCredentials.mockResolvedValue({ password: '123456', teamId: 'teamhash9' });
-        sessionApi.loginAndLoadContest.mockResolvedValue(snapshot);
-        sessionApi.refreshContestDetails.mockResolvedValue(refreshedContest);
-        treeProvider.getSnapshot.mockReturnValue(null);
-
-        const controller = createContestController({
-            context,
-            openTextDocument,
-            outputChannel,
-            promptTeamCredentials,
-            resolvePollIntervalMs,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-        });
-
-        await controller.loginTeam();
-        await vi.advanceTimersByTimeAsync(15000);
-
-        expect(sessionApi.refreshContestDetails).toHaveBeenCalledWith({
-            baseUrl: 'https://api.autojudge.test',
-            contest: snapshot.team.contest,
-            context,
-        });
-        expect(teamsStandingsProvider.setSnapshot).toHaveBeenLastCalledWith(refreshedSnapshot);
-
-        controller.dispose();
-        vi.useRealTimers();
-    });
-
-    it('keeps refreshing standings when the contest is identified only by its public id', async () => {
-        vi.useFakeTimers();
-
-        const snapshot = createPublicIdSnapshot();
         const [ninjas, bits] = snapshot.contest.teams;
         const liveContest = {
             ...snapshot.contest,
@@ -1008,7 +868,7 @@ describe('contest controller', () => {
                 { ...bits, score: 360000, solvedProblemIds: ['pa1b2c3d4e5f6', 'pb2c3d4e5f6a1'] },
             ],
         };
-        promptTeamCredentials.mockResolvedValue({ password: '123456', teamId: 'teamhash9' });
+        promptTeamCredentials.mockResolvedValue({ password: '123456', teamId: 'k3m9x2p7q8w1a' });
         sessionApi.loginAndLoadContest.mockResolvedValue(snapshot);
         sessionApi.refreshContestDetails.mockResolvedValue(liveContest);
         treeProvider.getSnapshot.mockReturnValue(null);

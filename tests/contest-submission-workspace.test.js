@@ -89,7 +89,7 @@ describe('contest submission workspace', () => {
         const workspace = new ContestSubmissionWorkspace();
 
         const result = await workspace.exportPublicCases(
-            { id: 1, title: 'Prob A' },
+            { publicId: 'pa1b2c3d4e5f6', title: 'Prob A' },
             [
                 { input: '1 2\n', output: '3\n' },
                 { input: '4 5\n', output: '9\n' },
@@ -146,7 +146,7 @@ describe('contest submission workspace', () => {
         const workspace = new ContestSubmissionWorkspace();
 
         const result = await workspace.exportPublicCases(
-            { id: 1, title: 'Prob A' },
+            { publicId: 'pa1b2c3d4e5f6', title: 'Prob A' },
             [
                 { input: '1 2\n', output: '3\n' },
             ],

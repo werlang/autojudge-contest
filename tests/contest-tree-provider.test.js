@@ -35,32 +35,32 @@ describe('contest tree provider', () => {
 
         provider.setSnapshot({
             problems: [
-                { id: 1, hash: 'prob-a', order: 1, title: 'A + B' },
-                { id: 2, hash: 'prob-b', order: 2, title: 'Binary Search' },
+                { publicId: 'pa1b2c3d4e5f6', order: 1, title: 'A + B' },
+                { publicId: 'pb2c3d4e5f6a1', order: 2, title: 'Binary Search' },
             ],
             submissions: [
                 {
                     id: 11,
                     status: 'WRONG_ANSWER',
                     submittedAt: '2026-05-28T03:00:00.000Z',
-                    problem: { id: 1, title: 'A + B' },
+                    problem: { publicId: 'pa1b2c3d4e5f6', title: 'A + B' },
                 },
                 {
                     id: 12,
                     status: 'ACCEPTED',
                     submittedAt: '2026-05-28T03:10:00.000Z',
-                    problem: { id: 1, title: 'A + B' },
+                    problem: { publicId: 'pa1b2c3d4e5f6', title: 'A + B' },
                 },
             ],
             team: {
                 contest: {
-                    id: 4,
+                    publicId: 'k3m9x2p7q8w1a',
                     name: 'Regional Final',
                 },
                 name: 'Bits',
             },
             contest: {
-                id: 4,
+                publicId: 'k3m9x2p7q8w1a',
                 name: 'Regional Final',
             },
             token: 'jwt-token',
@@ -119,7 +119,7 @@ describe('contest tree provider', () => {
         ]);
     });
 
-    it('groups submissions by problem public id when the server omits numeric ids', () => {
+    it('groups submissions by problem public id', () => {
         const provider = new ContestTreeProvider();
 
         provider.setSnapshot({
@@ -173,13 +173,13 @@ describe('contest tree provider', () => {
             submissions: [],
             team: {
                 contest: {
-                    id: 4,
+                    publicId: 'k3m9x2p7q8w1a',
                     name: 'Regional Final',
                 },
                 name: 'Bits',
             },
             contest: {
-                id: 4,
+                publicId: 'k3m9x2p7q8w1a',
                 name: 'Regional Final',
             },
             token: 'jwt-token',

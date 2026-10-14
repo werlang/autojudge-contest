@@ -209,7 +209,6 @@ export function createContestController({
             : {
                 ...submission,
                 problem: {
-                    id: problem.id,
                     publicId: problem.publicId,
                     title: problem.title,
                 },
@@ -533,7 +532,7 @@ function encodeSourceCode(sourceCode) {
  * Create the generated markdown preview file for a contest problem when it is
  * missing and return its stable path.
  * @param {object} context
- * @param {{ id?: string | number, title?: string }} problem
+ * @param {{ publicId?: string, title?: string }} problem
  * @returns {Promise<string>}
  */
 async function ensureProblemPreviewFile(context, problem) {
@@ -620,7 +619,7 @@ function resolvePreviewRoot(context) {
 /**
  * Build a stable kebab-case artifact name from the problem title, falling back
  * to the route id when the title is blank.
- * @param {{ id?: string | number, publicId?: string, title?: string }} problem
+ * @param {{ publicId?: string, title?: string }} problem
  * @returns {string}
  */
 function toProblemArtifactName(problem) {

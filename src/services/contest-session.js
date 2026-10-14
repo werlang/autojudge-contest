@@ -80,7 +80,7 @@ export async function refreshContestDetails({ baseUrl, contest, context }) {
 
 /**
  * Submit source code for a contest problem using the stored team token.
- * @param {{ baseUrl: string, code: string, context: import('vscode').ExtensionContext | { secrets: object, globalState: object }, filename: string, problemId: number | string }} options
+ * @param {{ baseUrl: string, code: string, context: import('vscode').ExtensionContext | { secrets: object, globalState: object }, filename: string, problemId: string }} options
  * @returns {Promise<object>}
  */
 export async function submitSolution({ baseUrl, code, context, filename, problemId }) {

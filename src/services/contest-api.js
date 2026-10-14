@@ -58,7 +58,7 @@ export async function getCurrentTeam({ baseUrl, token, signal }) {
 
 /**
  * Fetch the authenticated team's contest details.
- * @param {{ baseUrl: string, contestId: number | string, token: string, signal?: AbortSignal }} options
+ * @param {{ baseUrl: string, contestId: string, token: string, signal?: AbortSignal }} options
  * @returns {Promise<{ contest: object }>}
  */
 export async function getContestDetails({ baseUrl, contestId, token, signal }) {
@@ -73,7 +73,7 @@ export async function getContestDetails({ baseUrl, contestId, token, signal }) {
 
 /**
  * Fetch the contest-visible problem list for the authenticated team.
- * @param {{ baseUrl: string, contestId: number | string, token: string, signal?: AbortSignal }} options
+ * @param {{ baseUrl: string, contestId: string, token: string, signal?: AbortSignal }} options
  * @returns {Promise<{ problems: object[] }>}
  */
 export async function getContestProblems({ baseUrl, contestId, token, signal }) {
@@ -103,7 +103,7 @@ export async function getSubmissions({ baseUrl, token, signal }) {
 
 /**
  * Submit source code for one contest problem as the authenticated team.
- * @param {{ baseUrl: string, code: string, filename: string, problemId: number | string, token: string, signal?: AbortSignal }} options
+ * @param {{ baseUrl: string, code: string, filename: string, problemId: string, token: string, signal?: AbortSignal }} options
  * @returns {Promise<{ submission?: object } | object>}
  */
 export async function submitSolution({ baseUrl, code, filename, problemId, token, signal }) {

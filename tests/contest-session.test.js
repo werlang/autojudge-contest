@@ -67,11 +67,10 @@ describe('contest session flow', () => {
             .mockResolvedValueOnce(jsonResponse({ token: 'team-jwt-token' }))
             .mockResolvedValueOnce(jsonResponse({
                 team: {
-                    id: 9,
-                    hash: 'teamhash9',
+                    scoreboardId: 'sb-bits-91cd',
                     name: 'Bits',
                     contest: {
-                        id: 4,
+                        publicId: 'k3m9x2p7q8w1a',
                         name: 'Regional Final',
                         description: 'Regional ICPC warm-up',
                         logo: 'regional-final.webp',
@@ -80,40 +79,35 @@ describe('contest session flow', () => {
             }))
             .mockResolvedValueOnce(jsonResponse({
                 contest: {
-                    id: 4,
+                    publicId: 'k3m9x2p7q8w1a',
                     name: 'Regional Final',
                     duration: 180,
                     remainingTime: 90_000,
                     startTime: '2026-05-29T09:00:00.000Z',
                     teams: [
                         {
-                            id: 9,
+                            scoreboardId: 'sb-bits-91cd',
                             name: 'Bits',
                             score: 200,
-                            problems: [
-                                { id: 1, order: 1, solved: true, title: 'A + B' },
-                            ],
+                            solvedProblemIds: ['pa1b2c3d4e5f6'],
                         },
                         {
-                            id: 12,
+                            scoreboardId: 'sb-ninjas-7f3a',
                             name: 'Array Ninjas',
                             score: 350,
-                            problems: [
-                                { id: 1, order: 1, solved: true, title: 'A + B' },
-                                { id: 2, order: 2, solved: true, title: 'Binary Search' },
-                            ],
+                            solvedProblemIds: ['pa1b2c3d4e5f6', 'pb2c3d4e5f6a1'],
                         },
                     ],
                 },
             }))
             .mockResolvedValueOnce(jsonResponse({
                 problems: [
-                    { id: 1, hash: 'prob-a', title: 'A + B', order: 1 },
+                    { publicId: 'pa1b2c3d4e5f6', title: 'A + B', order: 1 },
                 ],
             }))
             .mockResolvedValueOnce(jsonResponse({
                 submissions: [
-                    { id: 22, status: 'PENDING', problem: { id: 1, title: 'A + B' } },
+                    { id: 22, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6', title: 'A + B' } },
                 ],
             }));
 
@@ -122,10 +116,10 @@ describe('contest session flow', () => {
             baseUrl: 'https://api.autojudge.test/base',
             context,
             password: '123456',
-            teamId: 'teamhash9',
+            teamId: 'k3m9x2p7q8w1a',
         });
 
-        expect(fetchMock).toHaveBeenNthCalledWith(1, 'https://api.autojudge.test/base/teams/teamhash9/login', expect.objectContaining({
+        expect(fetchMock).toHaveBeenNthCalledWith(1, 'https://api.autojudge.test/base/teams/k3m9x2p7q8w1a/login', expect.objectContaining({
             method: 'POST',
             headers: expect.objectContaining({
                 Authorization: 'Bearer 123456',
@@ -137,13 +131,13 @@ describe('contest session flow', () => {
                 Authorization: 'Bearer team-jwt-token',
             }),
         }));
-        expect(fetchMock).toHaveBeenNthCalledWith(3, 'https://api.autojudge.test/base/contests/4', expect.objectContaining({
+        expect(fetchMock).toHaveBeenNthCalledWith(3, 'https://api.autojudge.test/base/contests/k3m9x2p7q8w1a', expect.objectContaining({
             method: 'GET',
             headers: expect.objectContaining({
                 Authorization: 'Bearer team-jwt-token',
             }),
         }));
-        expect(fetchMock).toHaveBeenNthCalledWith(4, 'https://api.autojudge.test/base/contests/4/problems', expect.objectContaining({
+        expect(fetchMock).toHaveBeenNthCalledWith(4, 'https://api.autojudge.test/base/contests/k3m9x2p7q8w1a/problems', expect.objectContaining({
             method: 'GET',
             headers: expect.objectContaining({
                 Authorization: 'Bearer team-jwt-token',
@@ -157,18 +151,17 @@ describe('contest session flow', () => {
         }));
         expect(result).toEqual({
             problems: [
-                { id: 1, hash: 'prob-a', title: 'A + B', order: 1 },
+                { publicId: 'pa1b2c3d4e5f6', title: 'A + B', order: 1 },
             ],
             submissions: [
-                { id: 22, status: 'PENDING', problem: { id: 1, title: 'A + B' } },
+                { id: 22, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6', title: 'A + B' } },
             ],
             team: {
-                id: 9,
-                hash: 'teamhash9',
+                scoreboardId: 'sb-bits-91cd',
                 name: 'Bits',
                 contest: {
                     description: 'Regional ICPC warm-up',
-                    id: 4,
+                    publicId: 'k3m9x2p7q8w1a',
                     logo: 'regional-final.webp',
                     name: 'Regional Final',
                 },
@@ -176,28 +169,23 @@ describe('contest session flow', () => {
             contest: {
                 description: 'Regional ICPC warm-up',
                 duration: 180,
-                id: 4,
+                publicId: 'k3m9x2p7q8w1a',
                 name: 'Regional Final',
                 logo: 'regional-final.webp',
                 remainingTime: 90_000,
                 startTime: '2026-05-29T09:00:00.000Z',
                 teams: [
                     {
-                        id: 9,
+                        scoreboardId: 'sb-bits-91cd',
                         name: 'Bits',
                         score: 200,
-                        problems: [
-                            { id: 1, order: 1, solved: true, title: 'A + B' },
-                        ],
+                        solvedProblemIds: ['pa1b2c3d4e5f6'],
                     },
                     {
-                        id: 12,
+                        scoreboardId: 'sb-ninjas-7f3a',
                         name: 'Array Ninjas',
                         score: 350,
-                        problems: [
-                            { id: 1, order: 1, solved: true, title: 'A + B' },
-                            { id: 2, order: 2, solved: true, title: 'Binary Search' },
-                        ],
+                        solvedProblemIds: ['pa1b2c3d4e5f6', 'pb2c3d4e5f6a1'],
                     },
                 ],
             },
@@ -206,7 +194,7 @@ describe('contest session flow', () => {
 
         const storedSession = await session.readStoredSession(context);
         expect(storedSession).toEqual({
-            teamId: 'teamhash9',
+            teamId: 'k3m9x2p7q8w1a',
             token: 'team-jwt-token',
         });
 
@@ -238,7 +226,7 @@ describe('contest session flow', () => {
         const session = await import('../src/services/contest-session.js');
 
         await session.writeStoredSession(context, {
-            teamId: 'teamhash9',
+            teamId: 'k3m9x2p7q8w1a',
             token: 'team-jwt-token',
         });
 
@@ -254,14 +242,14 @@ describe('contest session flow', () => {
             code: 'print("hi")\n',
             context,
             filename: 'main.py',
-            problemId: 1,
+            problemId: 'pa1b2c3d4e5f6',
         });
 
-        expect(fetchMock).toHaveBeenCalledWith('https://api.autojudge.test/base/problems/1/judge', expect.objectContaining({
+        expect(fetchMock).toHaveBeenCalledWith('https://api.autojudge.test/base/problems/pa1b2c3d4e5f6/judge', expect.objectContaining({
             body: JSON.stringify({
                 code: 'print("hi")\n',
                 filename: 'main.py',
-                problemId: 1,
+                problemId: 'pa1b2c3d4e5f6',
             }),
             headers: expect.objectContaining({
                 Authorization: 'Bearer team-jwt-token',
@@ -283,7 +271,7 @@ describe('contest session flow', () => {
         const session = await import('../src/services/contest-session.js');
 
         await session.writeStoredSession(context, {
-            teamId: 'teamhash9',
+            teamId: 'k3m9x2p7q8w1a',
             token: 'team-jwt-token',
         });
 
@@ -348,7 +336,7 @@ describe('contest session flow', () => {
         const session = await import('../src/services/contest-session.js');
 
         await session.writeStoredSession(context, {
-            teamId: 'teamhash9',
+            teamId: 'k3m9x2p7q8w1a',
             token: 'team-jwt-token',
         });
 
@@ -375,17 +363,17 @@ describe('contest session flow', () => {
     });
 });
 describe('contest route ids', () => {
-    it('loads contest routes through the public id when the server returns one', async () => {
+    it('loads contest routes through the public id', async () => {
         fetchMock
             .mockResolvedValueOnce(jsonResponse({
                 team: {
-                    id: 9,
+                    scoreboardId: 'sb-bits-91cd',
                     name: 'Bits',
-                    contest: { id: 4, publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' },
+                    contest: { publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' },
                 },
             }))
-            .mockResolvedValueOnce(jsonResponse({ contest: { id: 4, publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' } }))
-            .mockResolvedValueOnce(jsonResponse({ problems: [{ id: 1, publicId: 'p1a2b3c4d5e6f', title: 'A + B', order: 1 }] }))
+            .mockResolvedValueOnce(jsonResponse({ contest: { publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' } }))
+            .mockResolvedValueOnce(jsonResponse({ problems: [{ publicId: 'pa1b2c3d4e5f6', title: 'A + B', order: 1 }] }))
             .mockResolvedValueOnce(jsonResponse({ submissions: [] }));
 
         const session = await import('../src/services/contest-session.js');
@@ -396,45 +384,20 @@ describe('contest route ids', () => {
 
         expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://api.autojudge.test/contests/k3m9x2p7q8w1a', expect.anything());
         expect(fetchMock).toHaveBeenNthCalledWith(3, 'https://api.autojudge.test/contests/k3m9x2p7q8w1a/problems', expect.anything());
-        expect(snapshot.problems).toEqual([{ id: 1, publicId: 'p1a2b3c4d5e6f', title: 'A + B', order: 1 }]);
+        expect(snapshot.problems).toEqual([{ publicId: 'pa1b2c3d4e5f6', title: 'A + B', order: 1 }]);
     });
 
-    it('falls back to the numeric contest id for servers that do not return a public id', async () => {
-        fetchMock
-            .mockResolvedValueOnce(jsonResponse({ team: { id: 9, name: 'Bits', contest: { id: 4, name: 'Regional Final' } } }))
-            .mockResolvedValueOnce(jsonResponse({ contest: { id: 4, name: 'Regional Final' } }))
-            .mockResolvedValueOnce(jsonResponse({ problems: [] }))
-            .mockResolvedValueOnce(jsonResponse({ submissions: [] }));
-
-        const session = await import('../src/services/contest-session.js');
-        await session.loadContestSnapshot({
-            baseUrl: 'https://api.autojudge.test',
-            token: 'team-jwt-token',
-        });
-
-        expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://api.autojudge.test/contests/4', expect.anything());
-        expect(fetchMock).toHaveBeenNthCalledWith(3, 'https://api.autojudge.test/contests/4/problems', expect.anything());
-    });
-
-    it('refreshes contest details through the public id and keeps the numeric id for older servers', async () => {
+    it('refreshes contest details through the public id', async () => {
         const session = await import('../src/services/contest-session.js');
         const context = createContext();
         await session.writeStoredSession(context, { teamId: 'k3m9x2p7q8w1a', token: 'team-jwt-token' });
 
-        fetchMock.mockResolvedValueOnce(jsonResponse({ contest: { id: 4, name: 'Regional Final', duration: 180 } }));
+        fetchMock.mockResolvedValueOnce(jsonResponse({ contest: { publicId: 'k3m9x2p7q8w1a', name: 'Regional Final', duration: 180 } }));
         await session.refreshContestDetails({
             baseUrl: 'https://api.autojudge.test',
-            contest: { id: 4, publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' },
+            contest: { publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' },
             context,
         });
         expect(fetchMock).toHaveBeenLastCalledWith('https://api.autojudge.test/contests/k3m9x2p7q8w1a', expect.anything());
-
-        fetchMock.mockResolvedValueOnce(jsonResponse({ contest: { id: 4, name: 'Regional Final', duration: 180 } }));
-        await session.refreshContestDetails({
-            baseUrl: 'https://api.autojudge.test',
-            contest: { id: 4, name: 'Regional Final' },
-            context,
-        });
-        expect(fetchMock).toHaveBeenLastCalledWith('https://api.autojudge.test/contests/4', expect.anything());
     });
 });
