@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Requires the updated AutoJudge server.** Contest, problem, submission and standings requests use public ids only (`publicId` for contests, problems and teams, `solvedProblemIds` for solved problems). Older servers that send numeric ids are no longer supported.
 - A team session lasts the whole contest and is shared with the browser. When it ends (contest over, or the staff reset your PIN), the extension asks you to log in again.
 - **Logout Team** only forgets the session on this computer; it does not end the team session.
+- Before the contest starts, the explorer shows **Contest has not started yet** and keeps your session; problems load once you refresh after the start.
+- Restoring the session or refreshing standings keeps your login on errors other than an ended session, instead of silently logging you out.
+- `autojudgeContest.baseUrl` and `autojudgeContest.webUrl` are application-scoped, so a workspace setting cannot redirect the login or the API.
+- A browser login that cannot open the browser fails with an error, and a callback that arrives with no login in progress says so.
+- The contest dashboard shows **Not started** for a contest without a start time, and the session-ended prompt shows again after a new login.
 
 ### Removed
 

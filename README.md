@@ -50,6 +50,12 @@ Get ready for the contest in just a few quick steps:
 
 1. **Open the Activity Bar:** Click the **AutoJudge Contest** icon on the VS Code sidebar.
 2. **Log In:** Click **Login Team** or use the command palette. Your browser opens the AutoJudge team login: enter the team code and PIN printed on your team card, then choose **Connect VS Code**. A team can only log in once; if you need to switch computers, ask the contest staff to reset your PIN.
+
+> [!NOTE]
+> Browser login works best with one VS Code window open. The browser's `vscode://` callback goes to whichever window VS Code routes it to, which may not be the window that started the login. If you have several windows open, close the others while you log in. A callback that reaches a window with no login in progress shows "No login in progress. Run Login Team again."
+
+> [!NOTE]
+> Before the contest starts, the explorer shows **Contest has not started yet** and keeps your session. Refresh once the contest starts to load the problems.
 3. **Explore Problems:** In the **Contest Explorer**, expand a problem. Use the book icon (📖) to view the problem description.
 4. **Generate Testcases:** Export public cases beside your active source code file.
 5. **Submit & Monitor:** Open your solution file, click the upload icon (📤), and monitor the verdict status live under the problem node or by clicking the submission row to view detailed outputs.
@@ -76,7 +82,7 @@ Customize the extension's behavior via your VS Code Settings:
 | `autojudgeContest.webUrl` | `string` | `"https://autojudge.io"` | Base URL of the AutoJudge website, opened for the browser login. |
 | `autojudgeContest.pollIntervalMs` | `number` | `5000` | The polling interval (in milliseconds) used when waiting for a submission verdict. (Min: `1000`) |
 
-*Note: The standings view automatically refreshes every 15 seconds (fixed interval).*
+*Note: The standings view automatically refreshes every 15 seconds (fixed interval). `autojudgeContest.baseUrl` and `autojudgeContest.webUrl` are application-scoped: set them in your user settings, since a workspace setting cannot change them.*
 
 ---
 
