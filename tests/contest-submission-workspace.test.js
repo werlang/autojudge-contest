@@ -125,6 +125,21 @@ describe('contest submission workspace', () => {
         });
     });
 
+    it('names blank-titled problems by public id so their exported testcases do not collide', async () => {
+        const workspace = new ContestSubmissionWorkspace();
+
+        await workspace.exportPublicCases(
+            { publicId: 'pa1b2c3d4e5f6', title: '   ' },
+            [{ input: '1 2\n', output: '3\n' }],
+        );
+
+        const destinationPath = path.normalize('/workspace/src');
+        expect(vscodeState.writeFile.mock.calls.map(([uri]) => uri.fsPath)).toEqual([
+            path.join(destinationPath, 'problem-pa1b2c3d4e5f6-testcase-00.in'),
+            path.join(destinationPath, 'problem-pa1b2c3d4e5f6-testcase-00.out'),
+        ]);
+    });
+
     it('exports public cases beside the active source file even when a testcase path is configured', async () => {
         vscodeState.setTestcasePath('../cases');
 

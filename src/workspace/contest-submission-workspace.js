@@ -1,6 +1,7 @@
 import path from 'path';
 import * as vscode from 'vscode';
 import { SUPPORTED_EXTENSIONS } from '../utils/config.js';
+import { resolveRouteId } from '../utils/public-id.js';
 
 const textEncoder = new TextEncoder();
 
@@ -85,12 +86,14 @@ async function writeUtf8File(uri, content) {
 }
 
 /**
- * Get a safe string from a problem title to use as a filename stem.
+ * Get a safe string from a problem title to use as a filename stem. Blank titles
+ * fall back to the problem route id so exports from different problems never share a name.
  * @param {object} problem
  * @returns {string}
  */
 function getProblemTitleStem(problem) {
-    const rawTitle = problem?.title?.toString().trim() || `problem-${problem?.id ?? 'unknown'}`;
+    const routeId = resolveRouteId(problem) ?? 'unknown';
+    const rawTitle = problem?.title?.toString().trim() || `problem-${routeId}`;
     // replace accents and non-alphanumeric characters their closest ASCII equivalent, then replace remaining non-alphanumerics with dashes, and trim extra dashes from the ends
     const replaceDiacritics = str => str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const normalizedTitle = rawTitle
@@ -100,5 +103,5 @@ function getProblemTitleStem(problem) {
         .join('')
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '');
-    return normalizedTitle || `problem-${problem?.id ?? 'unknown'}`;
+    return normalizedTitle || `problem-${routeId}`;
 }
