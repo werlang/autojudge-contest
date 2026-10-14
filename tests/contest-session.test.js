@@ -201,7 +201,7 @@ describe('contest session flow', () => {
         vi.useRealTimers();
     });
 
-    it('clears an invalid saved session instead of keeping a broken token around', async () => {
+    it('keeps the saved token and rejects when restore gets a 401 that is not SESSION_ENDED', async () => {
         const context = createContext();
         const session = await import('../src/services/contest-session.js');
 
@@ -211,13 +211,34 @@ describe('contest session flow', () => {
 
         fetchMock.mockResolvedValueOnce(jsonResponse({ message: 'Invalid token.' }, 401));
 
-        const restored = await session.restoreContestSession({
+        await expect(session.restoreContestSession({
             baseUrl: 'https://api.autojudge.test',
             context,
-        });
+        })).rejects.toMatchObject({ message: 'Invalid token.', statusCode: 401 });
 
-        expect(restored).toBeNull();
-        expect(await session.readStoredSession(context)).toBeNull();
+        expect(await session.readStoredSession(context)).toEqual({ token: 'expired-token' });
+    });
+
+    it('keeps the saved token when restore or a standings refresh gets a 400', async () => {
+        const context = createContext();
+        const session = await import('../src/services/contest-session.js');
+
+        await session.writeStoredSession(context, { token: 'team-jwt-token' });
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ message: 'Bad request.' }, 400));
+        await expect(session.restoreContestSession({
+            baseUrl: 'https://api.autojudge.test',
+            context,
+        })).rejects.toMatchObject({ statusCode: 400 });
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ message: 'Bad request.' }, 400));
+        await expect(session.refreshContestDetails({
+            baseUrl: 'https://api.autojudge.test',
+            contest: { publicId: 'k3m9x2p7q8w1a' },
+            context,
+        })).rejects.toMatchObject({ statusCode: 400 });
+
+        expect(await session.readStoredSession(context)).toEqual({ token: 'team-jwt-token' });
     });
 
     it('does not store a token when the hand-off code is rejected', async () => {

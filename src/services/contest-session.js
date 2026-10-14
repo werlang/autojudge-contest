@@ -1,5 +1,5 @@
 import { clearStoredSession, readStoredSession, writeStoredSession } from './session-store.js';
-import { getContestDetails, getContestProblems, getCurrentTeam, getSubmissions, isSessionEnded, redeemHandoffCode, submitSolution as submitContestSolution } from './contest-api.js';
+import { getContestDetails, getContestProblems, getCurrentTeam, getSubmissions, redeemHandoffCode, submitSolution as submitContestSolution } from './contest-api.js';
 import { isPendingSubmission } from '../utils/submission-status.js';
 import { resolveRouteId } from '../utils/public-id.js';
 import config from '../utils/config.js';
@@ -22,7 +22,9 @@ export async function redeemAndLoadContest({ baseUrl, code, context }) {
 }
 
 /**
- * Attempt to restore a previously persisted contest session.
+ * Attempt to restore a previously persisted contest session. Rejections are
+ * passed to the caller unchanged: only a SESSION_ENDED error means the stored
+ * token should be dropped, and that decision belongs to the controller.
  * @param {{ baseUrl: string, context: import('vscode').ExtensionContext | { secrets: object, globalState: object } }} options
  * @returns {Promise<{ token: string, team: object, problems: object[], submissions: object[] } | null>}
  */
@@ -32,27 +34,16 @@ export async function restoreContestSession({ baseUrl, context }) {
         return null;
     }
 
-    try {
-        return await loadContestSnapshot({
-            baseUrl,
-            token: session.token,
-        });
-    }
-    catch (error) {
-        // SESSION_ENDED is reported to the caller, which clears the token and
-        // tells the user; any other rejected token is dropped silently.
-        if (!isSessionEnded(error) && (error.statusCode === 400 || error.statusCode === 401)) {
-            await clearStoredSession(context);
-            return null;
-        }
-
-        throw error;
-    }
+    return loadContestSnapshot({
+        baseUrl,
+        token: session.token,
+    });
 }
 
 /**
  * Refresh the richer contest details for the active snapshot without reloading
- * problems or submissions.
+ * problems or submissions. Rejections are passed to the caller unchanged, so a
+ * failed request never drops the stored token on its own.
  * @param {{ baseUrl: string, contest: object, context: import('vscode').ExtensionContext | { secrets: object, globalState: object } }} options
  * @returns {Promise<object | null>}
  */
@@ -62,25 +53,13 @@ export async function refreshContestDetails({ baseUrl, contest, context }) {
         return null;
     }
 
-    try {
-        const { contest: detailedContest } = await getContestDetails({
-            baseUrl,
-            contestId: resolveRouteId(contest),
-            token: session.token,
-        });
+    const { contest: detailedContest } = await getContestDetails({
+        baseUrl,
+        contestId: resolveRouteId(contest),
+        token: session.token,
+    });
 
-        return mergeContestSnapshot(contest, detailedContest);
-    }
-    catch (error) {
-        // SESSION_ENDED is reported to the caller, which clears the token and
-        // tells the user; any other rejected token is dropped silently.
-        if (!isSessionEnded(error) && (error.statusCode === 400 || error.statusCode === 401)) {
-            await clearStoredSession(context);
-            return null;
-        }
-
-        throw error;
-    }
+    return mergeContestSnapshot(contest, detailedContest);
 }
 
 /**
