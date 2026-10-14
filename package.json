@@ -32,6 +32,20 @@
   "homepage": "https://autojudge.io",
   "icon": "media/icon.png",
   "main": "./src/extension.js",
+  "activationEvents": [
+    "onUri",
+    "onCommand:autojudgeContest.loginTeam",
+    "onCommand:autojudgeContest.logoutTeam",
+    "onCommand:autojudgeContest.refreshTree",
+    "onCommand:autojudgeContest.openContestDashboard",
+    "onCommand:autojudgeContest.openProblem",
+    "onCommand:autojudgeContest.submitActiveFile",
+    "onCommand:autojudgeContest.exportPublicCases",
+    "onCommand:autojudgeContest.openSubmission",
+    "onCommand:autojudgeContest.openTeamStanding",
+    "onView:autojudgeContest.explorer",
+    "onView:autojudgeContest.teams"
+  ],
   "type": "module",
   "contributes": {
     "viewsContainers": {
@@ -178,11 +192,13 @@
         "autojudgeContest.baseUrl": {
           "type": "string",
           "default": "https://api.autojudge.io",
+          "scope": "application",
           "description": "Full AutoJudge API base URL used for contest problem browsing, submissions, and session hand-off. Defaults to https://api.autojudge.io."
         },
         "autojudgeContest.webUrl": {
           "type": "string",
           "default": "https://autojudge.io",
+          "scope": "application",
           "description": "AutoJudge web app address opened in the browser to log in your team. Defaults to https://autojudge.io."
         },
         "autojudgeContest.pollIntervalMs": {

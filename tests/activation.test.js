@@ -183,9 +183,24 @@ describe('contest manifest contract', () => {
             }),
         ]));
         expect(manifest.contributes.configuration.properties).toEqual(expect.objectContaining({
-            'autojudgeContest.baseUrl': expect.any(Object),
+            'autojudgeContest.baseUrl': expect.objectContaining({ scope: 'application' }),
             'autojudgeContest.pollIntervalMs': expect.any(Object),
-            'autojudgeContest.webUrl': expect.objectContaining({ default: 'https://autojudge.io' }),
+            'autojudgeContest.webUrl': expect.objectContaining({ default: 'https://autojudge.io', scope: 'application' }),
         }));
+    });
+
+    it('activates on the login callback and on every contributed command and view', async () => {
+        const packagePath = path.resolve(
+            path.dirname(fileURLToPath(import.meta.url)),
+            '..',
+            'package.json',
+        );
+        const manifest = JSON.parse(await import('node:fs/promises').then(fs => fs.readFile(packagePath, 'utf8')));
+
+        expect(manifest.activationEvents).toContain('onUri');
+        expect(manifest.activationEvents).toEqual(expect.arrayContaining([
+            ...manifest.contributes.commands.map(command => `onCommand:${command.command}`),
+            ...manifest.contributes.views.autojudgeContest.map(view => `onView:${view.id}`),
+        ]));
     });
 });
