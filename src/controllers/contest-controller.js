@@ -49,6 +49,7 @@ const SESSION_ENDED_MESSAGE = 'Your session ended. Log in again (ask staff to re
 const HANDOFF_INVALID_MESSAGE = 'The browser login link expired or was already used. Run Log In again.';
 const CONTEST_NOT_STARTED_MESSAGE = 'The contest has not started yet. The problems load automatically once it starts.';
 const LOGGED_OUT_MESSAGE = 'Log in to AutoJudge Contest first.';
+const ALL_SOLVED_MESSAGE = 'All problems are solved.';
 const SUBMIT_IN_PROGRESS_MESSAGE = 'A submission is already being sent. Wait for it to finish.';
 const UPLOAD_TIMEOUT_MESSAGE = 'The upload did not finish in time. Check Contest Explorer before submitting again.';
 
@@ -325,9 +326,10 @@ export function createContestController({
      * Let the user choose a contest problem from a quick pick sorted by order.
      * @param {string} placeHolder
      * @param {string | null} [preferredId] route id of the problem to list first and preselect
-     * @returns {Promise<object | null>} null when logged out, empty, or cancelled
+     * @param {{ unsolvedOnly?: boolean }} [options] `unsolvedOnly` hides solved problems (submit)
+     * @returns {Promise<object | null>} null when logged out, empty, all solved, or cancelled
      */
-    const pickProblem = async (placeHolder, preferredId = null) => {
+    const pickProblem = async (placeHolder, preferredId = null, { unsolvedOnly = false } = {}) => {
         if (!currentSnapshot) {
             return promptLogIn();
         }
@@ -341,7 +343,15 @@ export function createContestController({
             return null;
         }
 
-        const items = problems.map(problem => ({
+        const candidates = unsolvedOnly
+            ? problems.filter(problem => !summarizeProblemSubmissions(problem, currentSnapshot.submissions).solved)
+            : problems;
+        if (!candidates.length) {
+            void Promise.resolve(showInformationMessage(ALL_SOLVED_MESSAGE));
+            return null;
+        }
+
+        const items = candidates.map(problem => ({
             label: getProblemPageName(problem, problems),
             description: describeProblemProgress(problem, currentSnapshot.submissions),
             problem,
@@ -365,9 +375,10 @@ export function createContestController({
      * @param {unknown} arg
      * @param {string} placeHolder
      * @param {string | null} [preferredId]
+     * @param {{ unsolvedOnly?: boolean }} [options] forwarded to the quick pick
      * @returns {Promise<object | null>}
      */
-    const resolveProblem = async (arg, placeHolder, preferredId = null) => {
+    const resolveProblem = async (arg, placeHolder, preferredId = null, options = {}) => {
         if (arg?.problem) {
             return arg.problem;
         }
@@ -376,7 +387,7 @@ export function createContestController({
             return arg;
         }
 
-        return pickProblem(placeHolder, preferredId);
+        return pickProblem(placeHolder, preferredId, options);
     };
 
     /**
@@ -1322,6 +1333,7 @@ export function createContestController({
                     isUriLike(arg) ? null : arg,
                     `Submit ${source.filename} to which problem?`,
                     preferredId,
+                    { unsolvedOnly: true },
                 );
                 if (!problem) {
                     return null;

@@ -952,6 +952,55 @@ describe('contest controller', () => {
             expect(sessionApi.submitSolution).toHaveBeenCalledWith(expect.objectContaining({ problemId: 'pb2c3d4e5f6a1' }));
         });
 
+        it('leaves solved problems out of the submit picker only', async () => {
+            const snapshot = createFullSnapshot();
+            snapshot.submissions = [
+                { id: 1, status: 'ACCEPTED', problem: { publicId: 'pa1b2c3d4e5f6' }, submittedAt: '2026-05-28T03:10:00.000Z' },
+            ];
+            showQuickPick.mockImplementation(async (items) => items[0]);
+            sessionApi.submitSolution.mockResolvedValue({ ...pending(), problem: { publicId: 'pb2c3d4e5f6a1' } });
+            const controller = buildLoggedInController(snapshot);
+
+            await controller.submitActiveFile();
+
+            expect(showQuickPick.mock.calls[0][0].map(item => item.label)).toEqual(['B. Binary Search']);
+            expect(sessionApi.submitSolution).toHaveBeenCalledWith(expect.objectContaining({ problemId: 'pb2c3d4e5f6a1' }));
+
+            showQuickPick.mockClear();
+            await controller.exportPublicCases();
+            expect(showQuickPick.mock.calls[0][0].map(item => item.label)).toEqual(['A. A + B', 'B. Binary Search']);
+        });
+
+        it('does not preselect a solved remembered problem in the submit picker', async () => {
+            const snapshot = createFullSnapshot();
+            snapshot.submissions = [
+                { id: 1, status: 'ACCEPTED', problem: { publicId: 'pa1b2c3d4e5f6' }, submittedAt: '2026-05-28T03:10:00.000Z' },
+            ];
+            workspaceStateStore['autojudgeContest.lastProblemByFile'] = { '/workspace/main.cpp': 'pa1b2c3d4e5f6' };
+            showQuickPick.mockResolvedValue(undefined);
+
+            await buildLoggedInController(snapshot).submitActiveFile();
+
+            const [items] = showQuickPick.mock.calls[0];
+            expect(items).toHaveLength(1);
+            expect(items[0].picked).toBeUndefined();
+        });
+
+        it('says all problems are solved instead of showing an empty submit picker', async () => {
+            const snapshot = createFullSnapshot();
+            snapshot.submissions = [
+                { id: 1, status: 'ACCEPTED', problem: { publicId: 'pa1b2c3d4e5f6' }, submittedAt: '2026-05-28T03:10:00.000Z' },
+                { id: 2, status: 'ACCEPTED', problem: { publicId: 'pb2c3d4e5f6a1' }, submittedAt: '2026-05-28T03:11:00.000Z' },
+            ];
+
+            const result = await buildLoggedInController(snapshot).submitActiveFile();
+
+            expect(result).toBeNull();
+            expect(showQuickPick).not.toHaveBeenCalled();
+            expect(showInformationMessage).toHaveBeenCalledWith('All problems are solved.');
+            expect(sessionApi.submitSolution).not.toHaveBeenCalled();
+        });
+
         it('treats an editor-title Uri as "no problem chosen" and opens that file when it is not the active editor', async () => {
             const snapshot = createFullSnapshot();
             const otherFile = fileUri('/workspace/other.py');
