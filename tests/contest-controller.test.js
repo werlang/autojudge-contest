@@ -1,15 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const fsState = vi.hoisted(() => ({
-    mkdir: vi.fn(),
-    writeFile: vi.fn(),
-}));
-
-vi.mock('node:fs/promises', () => ({
-    mkdir: fsState.mkdir,
-    writeFile: fsState.writeFile,
-}));
-
 vi.mock('vscode', () => ({
     workspace: {
         getConfiguration: () => ({
@@ -153,6 +143,7 @@ describe('contest controller', () => {
     let teamsStandingsProvider;
     let treeProvider;
     let statusBar;
+    let pageFiles;
     let controllers;
 
     beforeEach(() => {
@@ -172,8 +163,14 @@ describe('contest controller', () => {
             clear: vi.fn(),
             show: vi.fn(),
         };
-        fsState.mkdir.mockReset();
-        fsState.writeFile.mockReset();
+        // Fake page-file writer: the real one is covered in contest-page-files.test.js.
+        pageFiles = {
+            writePage: vi.fn(async (folder, pageName, fallbackName) => `${ROOT}/${folder}/${pageName || fallbackName}.md`),
+            writeComparison: vi.fn(async (id) => ({
+                expectedPath: `${ROOT}/submission-output/${id}/expected.txt`,
+                receivedPath: `${ROOT}/submission-output/${id}/received.txt`,
+            })),
+        };
         openTextDocument = vi.fn(async (target) => ({ uri: `uri:${target?.fsPath ?? target}` }));
         showTextDocument = vi.fn();
         browserLogin = { waitForHandoffCode: vi.fn() };
@@ -238,6 +235,7 @@ describe('contest controller', () => {
             openTextDocument,
             showTextDocument,
             outputChannel,
+            pageFiles,
             resolvePollIntervalMs,
             resolveBaseUrl,
             resolveConfirmBeforeSubmit,
@@ -272,11 +270,20 @@ describe('contest controller', () => {
     }
 
     /**
-     * Collect the paths written through the mocked fs module.
+     * Collect the page paths written through the fake page-file writer.
      * @returns {string[]}
      */
     function writtenPaths() {
-        return fsState.writeFile.mock.calls.map(([filePath]) => filePath);
+        return pageFiles.writePage.mock.calls.map(([folder, pageName]) => `${ROOT}/${folder}/${pageName}.md`);
+    }
+
+    /**
+     * Read the content of a written page.
+     * @param {number} [index] call index, last by default
+     * @returns {string}
+     */
+    function pageContent(index = -1) {
+        return pageFiles.writePage.mock.calls.at(index)[3];
     }
 
     describe('login and session', () => {
@@ -529,13 +536,13 @@ describe('contest controller', () => {
 
             await buildLoggedInController(snapshot).openProblem({ ...snapshot.problems[0], description: 'Add two integers.' });
 
-            expect(fsState.mkdir).toHaveBeenCalledWith(`${ROOT}/problem-previews`, { recursive: true });
-            expect(fsState.writeFile).toHaveBeenCalledWith(
-                `${ROOT}/problem-previews/A. A + B.md`,
+            expect(pageFiles.writePage).toHaveBeenCalledWith(
+                'problem-previews',
+                'A. A + B',
+                'problem-pa1b2c3d4e5f6',
                 expect.stringContaining('# A. A + B'),
-                { encoding: 'utf-8' },
             );
-            expect(fsState.writeFile.mock.calls[0][1]).toContain('Add two integers.');
+            expect(pageContent()).toContain('Add two integers.');
             expect(openTextDocument).toHaveBeenCalledWith(`${ROOT}/problem-previews/A. A + B.md`);
             expect(executeCommand).toHaveBeenCalledWith('markdown.showPreview', 'problem-uri', { preview: true });
         });
@@ -558,11 +565,8 @@ describe('contest controller', () => {
 
             const result = await buildController().openContestDashboard(contest);
 
-            expect(fsState.writeFile).toHaveBeenCalledWith(
-                `${ROOT}/contest-dashboards/Contest Overview · Regional Final.md`,
-                expect.stringContaining('# Contest Overview · Regional Final'),
-                { encoding: 'utf-8' },
-            );
+            expect(writtenPaths()).toEqual([`${ROOT}/contest-dashboards/Contest Overview · Regional Final.md`]);
+            expect(pageContent()).toContain('# Contest Overview · Regional Final');
             expect(executeCommand).toHaveBeenCalledWith('markdown.showPreview', expect.anything(), { preview: true });
             expect(result).toEqual(contest);
         });
@@ -579,7 +583,7 @@ describe('contest controller', () => {
                 problems: [],
             });
 
-            const dashboard = fsState.writeFile.mock.calls.at(-1)[1];
+            const dashboard = pageContent();
             expect(dashboard).toContain('- **Start:** Not started');
             expect(dashboard).toContain('- **End:** Not started');
             expect(dashboard).not.toContain('1970');
@@ -596,11 +600,8 @@ describe('contest controller', () => {
 
             const result = await buildLoggedInController(snapshot).openSubmission({ submission });
 
-            expect(fsState.writeFile).toHaveBeenCalledWith(
-                `${ROOT}/submission-details/Submission 12 · A. A + B.md`,
-                expect.stringContaining('# Submission 12'),
-                { encoding: 'utf-8' },
-            );
+            expect(writtenPaths()).toEqual([`${ROOT}/submission-details/Submission 12 · A. A + B.md`]);
+            expect(pageContent()).toContain('# Submission 12');
             expect(result).toEqual(submission);
         });
 
@@ -611,7 +612,7 @@ describe('contest controller', () => {
             await controller.openTeamStanding(snapshot.contest.teams[1]);
 
             expect(writtenPaths()).toEqual([`${ROOT}/team-details/Bits.md`]);
-            const [, content] = fsState.writeFile.mock.calls[0];
+            const content = pageContent(0);
             expect(content).toContain('- **Rank:** #2 of 2');
             expect(content).toContain('- **Solved:** 1 of 2');
             expect(content).toContain('- A. A + B');
@@ -1013,9 +1014,7 @@ describe('contest controller', () => {
 
             const result = await buildController().compareSubmissionOutput({ submission });
 
-            expect(fsState.mkdir).toHaveBeenCalledWith(`${ROOT}/submission-output/852`, { recursive: true });
-            expect(fsState.writeFile).toHaveBeenCalledWith(`${ROOT}/submission-output/852/expected.txt`, '3\n', { encoding: 'utf-8' });
-            expect(fsState.writeFile).toHaveBeenCalledWith(`${ROOT}/submission-output/852/received.txt`, '4\n', { encoding: 'utf-8' });
+            expect(pageFiles.writeComparison).toHaveBeenCalledWith(852, '3\n', '4\n');
             expect(executeCommand).toHaveBeenCalledWith(
                 'vscode.diff',
                 fileUri(`${ROOT}/submission-output/852/expected.txt`),

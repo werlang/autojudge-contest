@@ -1,5 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename } from 'node:path';
 import { CONTEXT_KEYS, VIEW_STATES } from '../constants.js';
 import {
     formatSubmissionStatus,
@@ -11,7 +10,6 @@ import {
     renderProblemPage,
     renderSubmissionDetails,
     renderTeamStandingDetails,
-    toSafeFileName,
 } from '../presentation/contest-presentation.js';
 import { HANDOFF_INVALID_CODE, INVALID_SETTING_CODE, isSessionEnded } from '../services/contest-api.js';
 import { BrowserLoginError, LOGIN_FAILURE } from '../services/browser-login.js';
@@ -19,6 +17,7 @@ import { isPassedSubmission, isPendingSubmission } from '../utils/submission-sta
 import { resolveRouteId } from '../utils/public-id.js';
 import { sortProblems, summarizeProblemSubmissions } from '../utils/contest-progress.js';
 import { extractPublicCases } from '../workspace/contest-public-cases.js';
+import { ContestPageFiles, resolvePreviewRoot } from '../workspace/contest-page-files.js';
 import { TEAM_PANEL_REFRESH_INTERVAL_MS } from '../utils/config.js';
 
 const SUBMISSION_POLL_TIMEOUT_MS = 2 * 60 * 1000;
@@ -104,6 +103,7 @@ export function logToChannel(channel, level, message) {
  * @param {{ visible?: boolean, onDidChangeVisibility?: Function } | null} [options.explorerView]
  * @param {{ visible?: boolean, onDidChangeVisibility?: Function } | null} [options.teamsView]
  * @param {(fsPath: string) => unknown} [options.toFileUri] converts a file path to a `vscode.Uri` for `vscode.diff`
+ * @param {{ writePage: Function, writeComparison: Function }} [options.pageFiles] generated-file writer; defaults to one under the extension storage root
  * @param {() => number} [options.now]
  * @returns {{ dispose: () => void, loginTeam: Function, logoutTeam: Function, refreshTree: Function, openContestDashboard: Function, openProblem: Function, openSubmission: Function, openTeamStanding: Function, compareSubmissionOutput: Function, submitActiveFile: Function, exportPublicCases: Function }}
  */
@@ -133,6 +133,7 @@ export function createContestController({
     teamsView = null,
     toFileUri = (fsPath) => fsPath,
     now = Date.now,
+    pageFiles = new ContestPageFiles(resolvePreviewRoot(context)),
 }) {
     let currentSnapshot = treeProvider.getSnapshot?.() ?? null;
     let teamsRefreshErrorMessage = null;
@@ -767,7 +768,7 @@ export function createContestController({
     };
 
     /**
-     * Write a generated Markdown page under the preview storage root and open
+     * Write a generated Markdown page through the page-file writer and open
      * it in the Markdown preview. The file name is the page name, so the tab
      * reads `Preview <page name>.md`.
      * @param {string} folder per-kind subfolder
@@ -777,12 +778,7 @@ export function createContestController({
      * @returns {Promise<object>} the opened document
      */
     const openGeneratedPage = async (folder, pageName, fallbackName, content) => {
-        const directory = join(resolvePreviewRoot(context), folder);
-        const filePath = join(directory, `${toSafeFileName(pageName, fallbackName)}.md`);
-
-        await mkdir(directory, { recursive: true });
-        await writeFile(filePath, content, { encoding: 'utf-8' });
-
+        const filePath = await pageFiles.writePage(folder, pageName, fallbackName, content);
         const document = await openTextDocument(filePath);
         // Use the built-in Markdown viewer so the page renders from the
         // persisted file instead of an untitled scratch buffer.
@@ -970,7 +966,7 @@ export function createContestController({
 
         /**
          * Diff a submission's expected and received output: both are written to
-         * `submission-output/<id>/` under the preview storage root and opened
+         * `submission-output/<id>/` by the page-file writer and opened
          * with `vscode.diff`.
          * @param {object | undefined | null} submission submission or tree item `{ submission }`
          * @returns {Promise<{ expectedPath: string, receivedPath: string } | null>}
@@ -989,17 +985,11 @@ export function createContestController({
 
             try {
                 const { hint } = selectedSubmission;
-                const directory = join(
-                    resolvePreviewRoot(context),
-                    'submission-output',
-                    toSafeFileName(String(selectedSubmission.id ?? ''), 'unknown'),
+                const { expectedPath, receivedPath } = await pageFiles.writeComparison(
+                    selectedSubmission.id,
+                    hint.expected,
+                    hint.received,
                 );
-                const expectedPath = join(directory, 'expected.txt');
-                const receivedPath = join(directory, 'received.txt');
-
-                await mkdir(directory, { recursive: true });
-                await writeFile(expectedPath, String(hint.expected ?? ''), { encoding: 'utf-8' });
-                await writeFile(receivedPath, String(hint.received ?? ''), { encoding: 'utf-8' });
                 await executeCommand(
                     'vscode.diff',
                     toFileUri(expectedPath),
@@ -1243,15 +1233,4 @@ function toText(value) {
  */
 function encodeSourceCode(sourceCode) {
     return Buffer.from(sourceCode, 'utf-8').toString('base64');
-}
-
-/**
- * Resolve the storage root used for generated pages and output files.
- * @param {object} context
- * @returns {string}
- */
-function resolvePreviewRoot(context) {
-    return context?.storageUri?.fsPath
-        ?? context?.globalStorageUri?.fsPath
-        ?? join(process.cwd(), '.autojudge-contest');
 }
