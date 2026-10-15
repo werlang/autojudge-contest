@@ -30,11 +30,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Public test cases are numbered from `01` (`<problem>-testcase-01.in`), down from `00`. They go to the active file's folder, else the only workspace folder, else a chosen folder.
 - The Standings view refreshes every 15 seconds while it is visible and every 60 seconds while it is hidden. It used to refresh every 15 seconds at all times.
 - `autojudgeContest.baseUrl` and `autojudgeContest.webUrl` are read on every use, so changes apply without reloading the window.
+- Problems load on their own once the contest starts, so a manual Refresh after the start is no longer needed.
+- Submitting to a problem the team has already solved is refused with an info message, before the confirmation. The confirmation says a rejected attempt adds penalty only if the problem is solved later.
+- A second submission is refused with an info message while the previous one is still being sent to the judge.
+- Pending verdicts share one poll loop: one request per interval covers every pending submission, network errors are retried, and a verdict still pending after 2 minutes is checked again 30 seconds later.
 
 ### Fixed
 
 - Standings ranked the slowest team first. Teams are now ranked by solved problems, then by lowest total time, and tied teams share a rank.
 - An invalid `autojudgeContest.baseUrl` prevented the extension from activating. Activation now succeeds; the error appears when the server is needed, with an **Open Settings** action.
+- Log In checks `autojudgeContest.baseUrl` before the browser opens, so an invalid value is reported without a browser round-trip.
+- A server that does not answer within 20 seconds counts as unreachable, so the views show **Offline** with **Retry** instead of loading forever.
+- `PARSING_ERROR` verdicts show as error verdicts.
+- Names from the server are escaped in generated pages, and Windows reserved file names (such as `CON` or `NUL`) get a `_` suffix so their page files can be written.
 
 ## [0.2.0] - 2026-10-14
 
