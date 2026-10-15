@@ -261,6 +261,25 @@ describe('contest session flow', () => {
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
+    it('does not store the token of a login that a newer login superseded', async () => {
+        const context = createContext();
+        const session = await import('../src/services/contest-session.js');
+        await session.writeStoredSession(context, { token: 'newer-login-token' });
+
+        fetchMock
+            .mockResolvedValueOnce(jsonResponse({ token: 'stale-login-token' }))
+            .mockResolvedValueOnce(jsonResponse({ message: 'stop after the redeem' }, 500));
+
+        await expect(session.redeemAndLoadContest({
+            baseUrl: 'https://api.autojudge.test',
+            code: 'stale-code',
+            context,
+            isCurrent: () => false,
+        })).rejects.toThrow();
+
+        expect(await session.readStoredSession(context)).toEqual({ token: 'newer-login-token' });
+    });
+
     it('keeps the session and marks the contest not started when problems are refused before the start', async () => {
         const context = createContext();
         const session = await import('../src/services/contest-session.js');

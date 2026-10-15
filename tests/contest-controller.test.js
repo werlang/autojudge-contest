@@ -352,7 +352,10 @@ describe('contest controller', () => {
                 baseUrl: 'https://api.autojudge.test',
                 code: 'handoff-code',
                 context,
+                isCurrent: expect.any(Function),
             });
+            // The only login in flight is the current one, so its token may be stored.
+            expect(sessionApi.redeemAndLoadContest.mock.calls[0][0].isCurrent()).toBe(true);
             expect(treeProvider.setSnapshot).toHaveBeenCalledWith(snapshot);
             expect(teamsStandingsProvider.setSnapshot).toHaveBeenCalledWith(snapshot);
             expect(statusBar.update).toHaveBeenCalledWith(snapshot);

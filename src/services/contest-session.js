@@ -8,13 +8,17 @@ export { clearStoredSession, readStoredSession, writeStoredSession };
 
 /**
  * Redeem the one-time code the browser handed over, persist the resulting team
- * token, and load the initial contest snapshot.
- * @param {{ baseUrl: string, code: string, context: import('vscode').ExtensionContext | { secrets: object, globalState: object } }} options
+ * token, and load the initial contest snapshot. `isCurrent` is checked right
+ * before the token is stored, so a login that a newer one superseded while it
+ * redeemed never overwrites the newer token.
+ * @param {{ baseUrl: string, code: string, context: import('vscode').ExtensionContext | { secrets: object, globalState: object }, isCurrent?: () => boolean }} options
  * @returns {Promise<{ token: string, team: object, problems: object[], submissions: object[] }>}
  */
-export async function redeemAndLoadContest({ baseUrl, code, context }) {
+export async function redeemAndLoadContest({ baseUrl, code, context, isCurrent = () => true }) {
     const { token } = await redeemHandoffCode({ baseUrl, code });
-    await writeStoredSession(context, { token });
+    if (isCurrent()) {
+        await writeStoredSession(context, { token });
+    }
 
     return loadContestSnapshot({ baseUrl, token });
 }

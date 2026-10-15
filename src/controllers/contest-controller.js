@@ -1070,6 +1070,7 @@ export function createContestController({
                         baseUrl,
                         code,
                         context,
+                        isCurrent: () => loginId === latestLoginId,
                     });
                 }
                 finally {
