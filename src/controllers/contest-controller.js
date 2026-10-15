@@ -1034,6 +1034,12 @@ export function createContestController({
                     return null;
                 }
 
+                // The server refuses another submission once a problem is solved.
+                if (summarizeProblemSubmissions(problem, currentSnapshot?.submissions).solved) {
+                    void Promise.resolve(showInformationMessage(`${problemLabel(problem)} is already solved.`));
+                    return null;
+                }
+
                 if (!(await confirmSubmission(source, problem))) {
                     return null;
                 }
@@ -1201,15 +1207,15 @@ function describeProblemProgress(problem, submissions) {
 
 /**
  * Explain the penalty of a rejected submission, with the contest's penalty
- * minutes when known.
+ * minutes when known. Penalty only counts once the problem is solved.
  * @param {{ penaltyTime?: number } | null | undefined} contest
  * @returns {string}
  */
 function describePenalty(contest) {
     const minutes = Number(contest?.penaltyTime);
     return contest?.penaltyTime != null && Number.isFinite(minutes) && minutes > 0
-        ? `A rejected submission adds ${minutes} min of penalty.`
-        : 'A rejected submission adds a penalty.';
+        ? `If it is rejected and you solve the problem later, it adds ${minutes} min of penalty.`
+        : 'A rejected attempt adds penalty time if you solve the problem later.';
 }
 
 /**

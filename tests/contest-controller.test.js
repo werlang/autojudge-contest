@@ -714,7 +714,7 @@ describe('contest controller', () => {
 
             expect(showWarningMessage).toHaveBeenCalledWith(
                 'Submit main.cpp to A. A + B?',
-                { modal: true, detail: 'A rejected submission adds 20 min of penalty.' },
+                { modal: true, detail: 'If it is rejected and you solve the problem later, it adds 20 min of penalty.' },
                 'Submit',
             );
             expect(sessionApi.submitSolution).toHaveBeenCalledWith({
@@ -741,9 +741,23 @@ describe('contest controller', () => {
 
             expect(showWarningMessage).toHaveBeenCalledWith(
                 'Submit main.cpp to A. A + B?',
-                { modal: true, detail: 'A rejected submission adds a penalty.' },
+                { modal: true, detail: 'A rejected attempt adds penalty time if you solve the problem later.' },
                 'Submit',
             );
+        });
+
+        it('does not submit to a problem the team already solved', async () => {
+            const snapshot = createSnapshot();
+            snapshot.submissions = [
+                { id: 3, status: 'ACCEPTED', problem: { publicId: 'pa1b2c3d4e5f6' }, submittedAt: '2026-05-28T03:10:00.000Z' },
+            ];
+
+            const result = await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+
+            expect(result).toBeNull();
+            expect(showInformationMessage).toHaveBeenCalledWith('A. A + B is already solved.');
+            expect(showWarningMessage).not.toHaveBeenCalled();
+            expect(sessionApi.submitSolution).not.toHaveBeenCalled();
         });
 
         it('does not submit when the confirmation is cancelled', async () => {
