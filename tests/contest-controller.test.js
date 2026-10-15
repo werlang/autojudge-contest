@@ -330,6 +330,23 @@ describe('contest controller', () => {
             expect(browserLogin.waitForHandoffCode).toHaveBeenCalledWith(cancellation);
         });
 
+        it('rejects an invalid base URL setting before opening the browser', async () => {
+            const invalid = Object.assign(new Error('The autojudgeContest.baseUrl setting is not a valid http(s) URL. Fix it in Settings.'), {
+                code: 'INVALID_SETTING',
+                setting: 'autojudgeContest.baseUrl',
+            });
+            resolveBaseUrl.mockImplementation(() => {
+                throw invalid;
+            });
+
+            const result = await buildController().loginTeam();
+
+            expect(result).toBeNull();
+            expect(withCancellableProgress).not.toHaveBeenCalled();
+            expect(browserLogin.waitForHandoffCode).not.toHaveBeenCalled();
+            expect(showErrorMessage).toHaveBeenCalledWith(invalid.message, 'Open Settings');
+        });
+
         it('ends quietly when the user cancels the browser login', async () => {
             browserLogin.waitForHandoffCode.mockRejectedValue(new BrowserLoginError(LOGIN_FAILURE.CANCELLED, 'Login cancelled.'));
 

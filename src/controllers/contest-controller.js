@@ -811,12 +811,15 @@ export function createContestController({
             sessionEndedPromptShown = false;
 
             try {
+                // Check the API setting before the browser round-trip so an
+                // invalid value fails fast with the Open Settings action.
+                const baseUrl = resolveBaseUrl();
                 const code = await withCancellableProgress(
                     WAITING_FOR_BROWSER_MESSAGE,
                     (cancellation) => browserLogin.waitForHandoffCode(cancellation),
                 );
                 const snapshot = await sessionApi.redeemAndLoadContest({
-                    baseUrl: resolveBaseUrl(),
+                    baseUrl,
                     code,
                     context,
                 });
