@@ -55,10 +55,10 @@ const UPLOAD_TIMEOUT_MESSAGE = 'The upload did not finish in time. Check Contest
 
 /**
  * Write one line to the output channel at the given level. A LogOutputChannel
- * (`createOutputChannel(name, { log: true })`) gets `info`/`warn`/`error`;
+ * (`createOutputChannel(name, { log: true })`) gets `debug`/`info`/`warn`/`error`;
  * plain channels and test fakes fall back to `appendLine`.
- * @param {{ appendLine: (message: string) => void, info?: Function, warn?: Function, error?: Function } | null | undefined} channel
- * @param {'info' | 'warn' | 'error'} level
+ * @param {{ appendLine: (message: string) => void, debug?: Function, info?: Function, warn?: Function, error?: Function } | null | undefined} channel
+ * @param {'debug' | 'info' | 'warn' | 'error'} level
  * @param {string} message
  */
 export function logToChannel(channel, level, message) {
@@ -108,6 +108,7 @@ export function logToChannel(channel, level, message) {
  * @param {{ setSnapshot: (snapshot: object | null) => void, getSnapshot?: () => object | null }} options.treeProvider
  * @param {{ update: (snapshot: object | null) => void, setPendingCount: (count: number) => void } | null} [options.statusBar]
  * @param {{ visible?: boolean, onDidChangeVisibility?: Function } | null} [options.explorerView]
+ * @param {(submissionId: string | number) => Promise<void> | void} [options.revealSubmission] scrolls a new submission into view in the explorer (no-op by default; failures are logged, never shown)
  * @param {{ visible?: boolean, onDidChangeVisibility?: Function } | null} [options.teamsView]
  * @param {(fsPath: string) => unknown} [options.toFileUri] converts a file path to a `vscode.Uri` for `vscode.diff`
  * @param {{ writePage: Function, writeComparison: Function }} [options.pageFiles] generated-file writer; defaults to one under the extension storage root
@@ -138,6 +139,7 @@ export function createContestController({
     statusBar = null,
     explorerView = null,
     teamsView = null,
+    revealSubmission = async () => {},
     toFileUri = (fsPath) => fsPath,
     now = Date.now,
     pageFiles = new ContestPageFiles(resolvePreviewRoot(context)),
@@ -708,6 +710,18 @@ export function createContestController({
 
         await syncTreeState(nextSnapshot);
         return nextSnapshot;
+    };
+
+    /**
+     * Ask the explorer to reveal a just-submitted row (a collapsed problem
+     * would otherwise hide it). Fire-and-forget: a failed reveal is only
+     * logged at debug level and never blocks the submit flow or shows a toast.
+     * @param {string | number} submissionId
+     */
+    const revealNewSubmission = (submissionId) => {
+        void Promise.resolve()
+            .then(() => revealSubmission(submissionId))
+            .catch((error) => log('debug', `Could not reveal submission #${submissionId}: ${error?.message ?? error}`));
     };
 
     /**
@@ -1372,6 +1386,7 @@ export function createContestController({
                 }
 
                 await mergeSubmissionIntoSnapshot(problem, submission);
+                revealNewSubmission(submission.id);
                 log('info', `Submitted ${source.filename} to ${problemLabel(problem)} (#${submission.id}).`);
 
                 if (!isPendingSubmission(submission?.status)) {

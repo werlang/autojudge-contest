@@ -7,6 +7,35 @@ import { ContestSubmissionWorkspace } from '../workspace/contest-submission-work
 import { getBaseUrl, getPollIntervalMs, resolveWebUrl } from '../utils/config.js';
 
 /**
+ * Create the explorer reveal used after a submit: expands the problem and
+ * scrolls the new submission row into view without stealing selection or
+ * focus. It does nothing while the explorer is hidden (VS Code would ignore
+ * or queue the reveal) and swallows reveal errors into a debug log line.
+ * @param {object} options
+ * @param {{ visible?: boolean, reveal?: Function } | null} options.treeView Contest Explorer view
+ * @param {{ findSubmissionItem: (submissionId: string | number) => object | undefined }} options.treeProvider
+ * @param {import('vscode').LogOutputChannel | import('vscode').OutputChannel} options.outputChannel
+ * @returns {(submissionId: string | number) => Promise<void>}
+ */
+export function createSubmissionReveal({ treeView, treeProvider, outputChannel }) {
+    return async (submissionId) => {
+        if (!treeView?.visible) {
+            return;
+        }
+
+        try {
+            const item = treeProvider.findSubmissionItem?.(submissionId);
+            if (item) {
+                await treeView.reveal(item, { select: false, focus: false, expand: true });
+            }
+        }
+        catch (error) {
+            logToChannel(outputChannel, 'debug', `Could not reveal submission #${submissionId}: ${error?.message ?? error}`);
+        }
+    };
+}
+
+/**
  * Register contest commands and keep the multi-step contest behavior inside the
  * controller rather than in VS Code command glue.
  * @param {object} options
@@ -67,6 +96,7 @@ export function registerContestCommands({
         statusBar,
         explorerView: treeView,
         teamsView,
+        revealSubmission: createSubmissionReveal({ treeView, treeProvider, outputChannel }),
     });
 
     // Startup restore: no error toast; failures show the offline welcome view.

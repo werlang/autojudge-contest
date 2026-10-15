@@ -825,6 +825,44 @@ describe('contest controller', () => {
             expect(result).toEqual(created);
         });
 
+        it('reveals the new submission after merging it into the snapshot', async () => {
+            const snapshot = createSnapshot();
+            const revealSubmission = vi.fn();
+            sessionApi.submitSolution.mockResolvedValue(pending(31));
+
+            await buildLoggedInController(snapshot, { revealSubmission }).submitActiveFile(snapshot.problems[0]);
+
+            expect(revealSubmission).toHaveBeenCalledTimes(1);
+            expect(revealSubmission).toHaveBeenCalledWith(31);
+            expect(treeProvider.setSnapshot.mock.invocationCallOrder.at(-1))
+                .toBeLessThan(revealSubmission.mock.invocationCallOrder[0]);
+        });
+
+        it('does not reveal anything when the submit fails', async () => {
+            const snapshot = createSnapshot();
+            const revealSubmission = vi.fn();
+            sessionApi.submitSolution.mockRejectedValue(new Error('boom'));
+
+            await buildLoggedInController(snapshot, { revealSubmission }).submitActiveFile(snapshot.problems[0]);
+
+            expect(revealSubmission).not.toHaveBeenCalled();
+        });
+
+        it('keeps submitting and shows no toast when the reveal fails', async () => {
+            const snapshot = createSnapshot();
+            const revealSubmission = vi.fn().mockRejectedValue(new Error('tree not ready'));
+            sessionApi.submitSolution.mockResolvedValue(pending());
+
+            const result = await buildLoggedInController(snapshot, { revealSubmission }).submitActiveFile(snapshot.problems[0]);
+
+            expect(result).toEqual(pending());
+            await vi.waitFor(() => expect(outputChannel.appendLine).toHaveBeenCalledWith(
+                expect.stringContaining('Could not reveal submission #27: tree not ready'),
+            ));
+            expect(showErrorMessage).not.toHaveBeenCalled();
+            expect(toastCalls()).toEqual([]);
+        });
+
         it('uses a generic penalty sentence when the contest penalty is unknown', async () => {
             const snapshot = createSnapshot();
             snapshot.contest = { ...snapshot.contest, penaltyTime: undefined };

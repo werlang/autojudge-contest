@@ -52,7 +52,7 @@ vi.mock('../src/services/contest-session.js', () => ({
     submitSolution: vi.fn(),
 }));
 
-import { registerContestCommands } from '../src/commands/contest-commands.js';
+import { createSubmissionReveal, registerContestCommands } from '../src/commands/contest-commands.js';
 import { COMMANDS } from '../src/constants.js';
 import * as contestSession from '../src/services/contest-session.js';
 
@@ -315,5 +315,49 @@ describe('live settings readers', () => {
         expect(getPollIntervalMs()).toBe(1000);
         vscodeState.pollIntervalMs = 'abc';
         expect(getPollIntervalMs()).toBe(5000);
+    });
+});
+
+describe('submission reveal', () => {
+    const buildReveal = (treeView, findSubmissionItem = vi.fn(() => ({ id: 'submission:5' }))) => ({
+        findSubmissionItem,
+        reveal: createSubmissionReveal({ treeView, treeProvider: { findSubmissionItem }, outputChannel }),
+    });
+
+    it('reveals the submission item expanded, without selecting or focusing, while the explorer is visible', async () => {
+        const treeView = { visible: true, reveal: vi.fn().mockResolvedValue(undefined) };
+        const { findSubmissionItem, reveal } = buildReveal(treeView);
+
+        await reveal(5);
+
+        expect(findSubmissionItem).toHaveBeenCalledWith(5);
+        expect(treeView.reveal).toHaveBeenCalledWith({ id: 'submission:5' }, { select: false, focus: false, expand: true });
+    });
+
+    it('does nothing while the explorer is hidden or missing', async () => {
+        const hidden = { visible: false, reveal: vi.fn() };
+
+        await buildReveal(hidden).reveal(5);
+        await buildReveal(null).reveal(5);
+
+        expect(hidden.reveal).not.toHaveBeenCalled();
+    });
+
+    it('skips the reveal when the submission item is not in the tree', async () => {
+        const treeView = { visible: true, reveal: vi.fn() };
+
+        await buildReveal(treeView, vi.fn(() => undefined)).reveal(5);
+
+        expect(treeView.reveal).not.toHaveBeenCalled();
+    });
+
+    it('swallows reveal errors into the log without a toast', async () => {
+        const treeView = { visible: true, reveal: vi.fn().mockRejectedValue(new Error('no element')) };
+
+        await expect(buildReveal(treeView).reveal(5)).resolves.toBeUndefined();
+
+        expect(outputChannel.appendLine).toHaveBeenCalledWith('Could not reveal submission #5: no element');
+        expect(vscodeState.showErrorMessage).not.toHaveBeenCalled();
+        expect(vscodeState.showWarningMessage).not.toHaveBeenCalled();
     });
 });
