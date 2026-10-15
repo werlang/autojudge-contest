@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { INVALID_SETTING_CODE, isSessionEnded, normalizeBaseUrl, redeemHandoffCode } from '../src/services/contest-api.js';
+import { INVALID_SETTING_CODE, REQUEST_TIMEOUT_MS, getSubmissions, isSessionEnded, normalizeBaseUrl, redeemHandoffCode } from '../src/services/contest-api.js';
 
 const fetchMock = vi.fn();
 
@@ -26,6 +26,42 @@ beforeEach(() => {
 
 afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+});
+
+/**
+ * Make fetch hang until its signal aborts, then reject like fetch does.
+ */
+function hangUntilAborted() {
+    fetchMock.mockImplementation((_url, { signal }) => new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+    }));
+}
+
+describe('request timeout', () => {
+    it('rejects a hung request with a clear message once the timeout fires', async () => {
+        const timeout = new AbortController();
+        const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal);
+        hangUntilAborted();
+
+        const request = getSubmissions({ baseUrl: 'https://api.autojudge.test', token: 't' });
+        timeout.abort();
+
+        await expect(request).rejects.toThrow('The AutoJudge server did not respond in time.');
+        expect(timeoutSpy).toHaveBeenCalledWith(REQUEST_TIMEOUT_MS);
+        expect(REQUEST_TIMEOUT_MS).toBe(20000);
+    });
+
+    it('keeps the caller abort error when the caller signal aborts first', async () => {
+        vi.spyOn(AbortSignal, 'timeout').mockReturnValue(new AbortController().signal);
+        hangUntilAborted();
+        const caller = new AbortController();
+
+        const request = getSubmissions({ baseUrl: 'https://api.autojudge.test', token: 't', signal: caller.signal });
+        caller.abort();
+
+        await expect(request).rejects.toMatchObject({ name: 'AbortError' });
+    });
 });
 
 describe('redeemHandoffCode', () => {
@@ -42,7 +78,7 @@ describe('redeemHandoffCode', () => {
             body: JSON.stringify({ code: 'abc_DEF-123' }),
             headers: { 'Content-Type': 'application/json' },
             method: 'POST',
-            signal: undefined,
+            signal: expect.any(AbortSignal),
         });
     });
 

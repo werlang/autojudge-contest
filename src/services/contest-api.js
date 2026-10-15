@@ -24,6 +24,14 @@ export const CONTEST_NOT_STARTED_CODE = 'CONTEST_NOT_STARTED';
 export const INVALID_SETTING_CODE = 'INVALID_SETTING';
 
 /**
+ * How long one API request may take before it is aborted, so a hung server
+ * never leaves a view loading forever.
+ */
+export const REQUEST_TIMEOUT_MS = 20 * 1000;
+
+const REQUEST_TIMEOUT_MESSAGE = 'The AutoJudge server did not respond in time.';
+
+/**
  * Build the friendly error thrown for an invalid URL setting.
  * @param {string} setting full setting id, e.g. `autojudgeContest.baseUrl`
  * @returns {Error & { code: string, setting: string }}
@@ -206,19 +214,57 @@ function buildAuthHeaders(token) {
 }
 
 /**
- * Execute a JSON API request and preserve the backend message on failure.
+ * Combine the request timeout with an optional caller signal (logout, poll
+ * stop). Falls back to the caller signal alone when the runtime lacks
+ * `AbortSignal.timeout`/`AbortSignal.any`.
+ * @param {AbortSignal | undefined} signal
+ * @returns {{ signal: AbortSignal | undefined, timeoutSignal: AbortSignal | null }}
+ */
+function withRequestTimeout(signal) {
+    if (typeof AbortSignal?.timeout !== 'function') {
+        return { signal, timeoutSignal: null };
+    }
+
+    const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+    if (!signal) {
+        return { signal: timeoutSignal, timeoutSignal };
+    }
+
+    return typeof AbortSignal.any === 'function'
+        ? { signal: AbortSignal.any([signal, timeoutSignal]), timeoutSignal }
+        : { signal, timeoutSignal: null };
+}
+
+/**
+ * Execute a JSON API request and preserve the backend message on failure. A
+ * request that runs past REQUEST_TIMEOUT_MS rejects with a clear error; a
+ * caller abort rejects with the fetch AbortError unchanged.
  * @param {{ baseUrl: string, endpoint: string, headers?: Record<string, string>, method: string, signal?: AbortSignal, body?: unknown }} options
  * @returns {Promise<any>}
  */
 async function requestJson({ baseUrl, endpoint, headers, method, signal, body }) {
-    const response = await fetch(buildEndpointUrl(baseUrl, endpoint), {
-        body: body == null ? undefined : JSON.stringify(body),
-        headers,
-        method,
-        signal,
-    });
+    const url = buildEndpointUrl(baseUrl, endpoint);
+    const timeout = withRequestTimeout(signal);
+    let response;
+    let payload;
 
-    const payload = await response.json().catch(() => ({}));
+    try {
+        response = await fetch(url, {
+            body: body == null ? undefined : JSON.stringify(body),
+            headers,
+            method,
+            signal: timeout.signal,
+        });
+        payload = await response.json().catch(() => ({}));
+    }
+    catch (error) {
+        if (timeout.timeoutSignal?.aborted && !signal?.aborted) {
+            throw new Error(REQUEST_TIMEOUT_MESSAGE);
+        }
+
+        throw error;
+    }
+
     if (!response.ok) {
         const error = new Error(payload.message || 'AutoJudge Contest request failed.');
         error.statusCode = response.status;
