@@ -89,7 +89,7 @@ export function logToChannel(channel, level, message) {
  * @param {() => number} [options.resolvePollIntervalMs] already normalized interval (`getPollIntervalMs`)
  * @param {() => string} options.resolveBaseUrl may throw an INVALID_SETTING error
  * @param {() => boolean} [options.resolveConfirmBeforeSubmit] reads `autojudgeContest.confirmBeforeSubmit` live (default true)
- * @param {{ clearStoredSession: Function, readStoredSession?: Function, redeemAndLoadContest: Function, pollSubmissionResult?: Function, refreshContestDetails?: Function, restoreContestSession: Function, submitSolution: Function }} options.sessionApi
+ * @param {{ clearStoredSession: Function, readStoredSession: Function, redeemAndLoadContest: Function, pollSubmissionResult: Function, refreshContestDetails: Function, restoreContestSession: Function, submitSolution: Function }} options.sessionApi
  * @param {(key: string, value: string | boolean) => Promise<void> | void} options.setContext
  * @param {(message: string, ...optionsAndActions: unknown[]) => Promise<string | undefined> | unknown} options.showInformationMessage
  * @param {(message: string, ...optionsAndActions: unknown[]) => Promise<string | undefined> | unknown} options.showErrorMessage
@@ -97,7 +97,7 @@ export function logToChannel(channel, level, message) {
  * @param {(items: object[], options: object) => Promise<object | undefined> | object | undefined} [options.showQuickPick]
  * @param {<T>(task: () => Promise<T>) => Promise<T>} [options.withExplorerProgress] shows progress on the Contest Explorer view during a manual refresh
  * @param {<T>(title: string, task: (cancellation: object) => Promise<T>) => Promise<T>} options.withCancellableProgress shows a cancellable notification and passes the cancellation token to the task
- * @param {{ exportPublicCases: Function, readActiveSourceFile: Function, pickExportDirectory?: Function, findExistingCaseFiles?: Function }} options.submissionWorkspace
+ * @param {{ exportPublicCases: Function, readActiveSourceFile: Function, pickExportDirectory: Function, findExistingCaseFiles: Function }} options.submissionWorkspace
  * @param {{ setSnapshot: (snapshot: object | null) => void }} options.teamsStandingsProvider
  * @param {{ setSnapshot: (snapshot: object | null) => void, refresh?: () => void, getSnapshot?: () => object | null }} options.treeProvider
  * @param {{ update: (snapshot: object | null) => void, setPendingCount: (count: number) => void } | null} [options.statusBar]
@@ -264,10 +264,6 @@ export function createContestController({
      * @returns {Promise<boolean>}
      */
     const hasStoredToken = async () => {
-        if (typeof sessionApi.readStoredSession !== 'function') {
-            return true;
-        }
-
         try {
             return Boolean((await sessionApi.readStoredSession(context))?.token);
         }
@@ -439,7 +435,7 @@ export function createContestController({
      * re-rendered.
      */
     const refreshTeamsStandings = async () => {
-        if (teamsRefreshInFlight || typeof sessionApi.refreshContestDetails !== 'function') {
+        if (teamsRefreshInFlight) {
             return;
         }
 
@@ -509,7 +505,7 @@ export function createContestController({
             return;
         }
 
-        if (resolveRouteId(currentSnapshot.contest) && typeof sessionApi.refreshContestDetails === 'function') {
+        if (resolveRouteId(currentSnapshot.contest)) {
             const interval = isVisible(teamsView)
                 ? TEAM_PANEL_REFRESH_INTERVAL_MS
                 : HIDDEN_STANDINGS_REFRESH_INTERVAL_MS;
@@ -622,9 +618,7 @@ export function createContestController({
      * @returns {Promise<object>} the final submission, or the given one on timeout or failure
      */
     const trackSubmission = (submission, { problem = submission?.problem, userInitiated = false } = {}) => {
-        if (!isPendingSubmission(submission?.status)
-            || submission?.id == null
-            || typeof sessionApi.pollSubmissionResult !== 'function') {
+        if (!isPendingSubmission(submission?.status) || submission?.id == null) {
             return Promise.resolve(submission);
         }
 
