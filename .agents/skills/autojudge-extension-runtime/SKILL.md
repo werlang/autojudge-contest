@@ -16,9 +16,9 @@ Use this skill when a task changes how the contest extension authenticates a tea
 
 ## Ownership And Maintainability Contract
 
-- Keep activation thin in `src/extension.js`; it should assemble the output channel, views, and disposables, not own contest business logic.
+- Keep activation thin in `src/extension.js`; it should assemble the output channel, views, status bar, and disposables, not own contest business logic.
 - Keep command registration and VS Code prompt glue in `src/commands/contest-commands.js`; move multi-step contest behavior into the controller or focused helpers instead of growing anonymous command bodies.
-- Keep authenticated orchestration in `src/controllers/contest-controller.js`, HTTP contract details in `src/services/contest-api.js`, persisted-session rules in `src/services/contest-session.js` and `src/services/session-store.js`, contest-tree shaping in `src/providers/contest-tree-provider.js`, standings rendering in `src/providers/teams-tree-provider.js`, and formatting-only helpers in `src/presentation/contest-presentation.js` plus `src/utils/`.
+- Keep authenticated orchestration in `src/controllers/contest-controller.js`, HTTP contract details in `src/services/contest-api.js`, persisted-session rules in `src/services/contest-session.js` and `src/services/session-store.js`, contest-tree shaping in `src/providers/contest-tree-provider.js`, standings rendering in `src/providers/teams-tree-provider.js`, status-bar rendering in `src/providers/contest-status-bar.js`, and formatting-only helpers in `src/presentation/contest-presentation.js` plus `src/utils/` (time formatting in `src/utils/time-format.js`, contest timing and problem progress in `src/utils/contest-progress.js`).
 - Preserve clear object ownership. Prefer a small class or helper only when it owns long-lived state, repeated transformation logic, or a stable extension boundary; avoid scattering one-off helpers that only rename a few lines.
 - When adding a new explorer behavior, keep the tree item model, the command handler, and the controller transition readable as separate responsibilities.
 - Reuse `normalizeBaseUrl()` from `src/services/contest-api.js` instead of rebuilding base-path logic in commands, controllers, or tests.
@@ -26,20 +26,22 @@ Use this skill when a task changes how the contest extension authenticates a tea
 
 ## Runtime Contract
 
-- Preserve the current command surface unless the task explicitly changes the manifest: `autojudgeContest.loginTeam`, `autojudgeContest.logoutTeam`, `autojudgeContest.refreshTree`, `autojudgeContest.openProblem`, `autojudgeContest.submitActiveFile`, `autojudgeContest.exportPublicCases`, `autojudgeContest.openSubmission`, and `autojudgeContest.openTeamStanding`.
-- Preserve the login flow shape unless intentionally changing it: prompt for team code first, then prompt for password.
-- Successful login must continue to store the returned token in VS Code secrets and persist the team id in global state.
+- Preserve the current command surface unless the task explicitly changes the manifest: `autojudgeContest.loginTeam`, `autojudgeContest.logoutTeam`, `autojudgeContest.refreshTree`, `autojudgeContest.openContestDashboard`, `autojudgeContest.openProblem`, `autojudgeContest.submitActiveFile`, `autojudgeContest.exportPublicCases`, `autojudgeContest.openSubmission`, `autojudgeContest.openTeamStanding`, and `autojudgeContest.compareSubmissionOutput`.
+- Preserve the browser login shape unless intentionally changing it: `loginTeam` opens the web login with `client=vscode` and a fresh `state`, waits for the `vscode://autojudge.autojudge-contest/auth` callback whose `state` matches, and redeems the one-time code. Do not add a team-code or password prompt in VS Code.
+- Successful login must continue to store only the returned token in VS Code secrets. Do not persist the team id or other session metadata in global state.
 - Refresh and session restore must continue to load the current team, contest details, problems, and submissions through the contest-session path instead of duplicating fetch logic elsewhere.
-- Clear the stored session and return the tree to the logged-out state only when the server reports `SESSION_ENDED` (`401`). Other restore or standings-refresh rejections keep the token and surface the error. A `403` with `CONTEST_NOT_STARTED` keeps the token and shows the contest as not started until a refresh finds problems.
-- Preserve current interaction rules unless the task intentionally changes them: problem rows open only through the explicit action, submission rows open directly on selection, problems stay sorted by `order`, submissions stay sorted newest-first, and standings stay sorted by score descending.
+- Clear the stored session and return the views to the logged-out state only when the server reports `SESSION_ENDED` (`401`). Other restore failures keep the token and set the `offline` view state. Standings-refresh rejections keep the snapshot and log a warning. A `403` with `CONTEST_NOT_STARTED` keeps the token and shows the contest as not started until a refresh finds problems.
+- Keep the `autojudgeContest.state` values (`loading`, `loggedIn`, `loggedOut`, `offline`) in sync across `VIEW_STATES` in `src/constants.js`, the controller, the `when` clauses, and the `viewsWelcome` entries in `package.json`.
+- Preserve current interaction rules unless the task intentionally changes them: problem rows open only through the explicit action, submission rows open directly on selection, problems stay sorted by `order`, submissions stay sorted newest-first, and standings stay sorted by solved problems (descending), then total time (ascending).
+- Write generated pages and compare files only under the storage root (see `resolvePreviewRoot` in the controller). Only an explicit testcase export writes into the workspace.
 - Keep post-submit polling routed through the controller and contest-session layers so `autojudgeContest.pollIntervalMs` remains the only user-configurable verdict polling interval.
-- Keep the teams standings refresh cadence fixed at 15 seconds unless the manifest and docs are intentionally expanded to expose a new setting.
+- Keep the standings refresh cadence at 15 seconds while the Standings view is visible and 60 seconds while it is hidden (`TEAM_PANEL_REFRESH_INTERVAL_MS` plus the controller's hidden interval) unless the manifest and docs are intentionally expanded to expose a new setting.
 - Treat placeholder commands honestly until they are implemented. Do not update docs or menus to imply functionality that runtime code still does not provide.
 
 ## Security And Correctness Review Checklist
 
 - Never log tokens, passwords, or raw secret-bearing request headers to the output channel, notifications, tests, or thrown error messages.
-- Keep token persistence inside `src/session-store.js` and related session helpers. Do not add alternate secret caches in tree items, globals, temp files, or command closures.
+- Keep token persistence inside `src/services/session-store.js` and related session helpers. Do not add alternate secret caches in tree items, globals, temp files, or command closures.
 - Treat AutoJudge API strings as untrusted input. Render them as text only; do not turn them into shell commands, file-system writes, or command ids without explicit validation.
 - Guard commands against missing or stale contest state. A tree-item action should fail clearly when the session expired, the expected problem or submission no longer exists, or the active editor is unavailable.
 - Keep auth and session cleanup symmetric: a failed restore, logout, or invalid token path must not leave stale logged-in context keys behind.
