@@ -481,7 +481,8 @@ export function createContestController({
             return true;
         }
 
-        const action = await showWarningMessage(
+        // A routine action: an information modal, not an alarming warning.
+        const action = await showInformationMessage(
             `Submit ${source.filename} to ${label}?`,
             { modal: true, detail: penalty },
             SUBMIT_ACTION,

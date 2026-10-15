@@ -458,7 +458,8 @@ describe('contest controller', () => {
         it('starts the browser login when the Log In action of the session-ended message is chosen', async () => {
             const snapshot = createSnapshot();
             sessionApi.submitSolution.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
-            showWarningMessage.mockImplementation(async (message) => (message.startsWith('Submit') ? 'Submit' : 'Log In'));
+            showInformationMessage.mockImplementation(async (message) => (message.startsWith('Submit ') ? 'Submit' : undefined));
+            showWarningMessage.mockResolvedValue('Log In');
             browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
             sessionApi.redeemAndLoadContest.mockResolvedValue(snapshot);
 
@@ -783,6 +784,8 @@ describe('contest controller', () => {
     });
 
     describe('submit', () => {
+        /** Information toasts other than the submit confirmation modal. */
+        const toastCalls = () => showInformationMessage.mock.calls.filter(([message]) => !message.startsWith('Submit '));
         const pending = (id = 27) => ({
             id,
             problem: { publicId: 'pa1b2c3d4e5f6', title: 'A + B' },
@@ -791,7 +794,7 @@ describe('contest controller', () => {
         });
 
         beforeEach(() => {
-            showWarningMessage.mockImplementation(async (message) => (message.startsWith('Submit ') ? 'Submit' : undefined));
+            showInformationMessage.mockImplementation(async (message) => (message.startsWith('Submit ') ? 'Submit' : undefined));
             pollTimesOut();
         });
 
@@ -802,7 +805,7 @@ describe('contest controller', () => {
 
             const result = await buildLoggedInController(snapshot).submitActiveFile({ problem: snapshot.problems[0] });
 
-            expect(showWarningMessage).toHaveBeenCalledWith(
+            expect(showInformationMessage).toHaveBeenCalledWith(
                 'Submit main.cpp to A. A + B?',
                 { modal: true, detail: 'If it is rejected and you solve the problem later, it adds 20 min of penalty.' },
                 'Submit',
@@ -818,7 +821,7 @@ describe('contest controller', () => {
             expect(statusBar.setPendingCount).toHaveBeenCalledWith(1);
             expect(workspaceStateStore['autojudgeContest.lastProblemByFile']).toEqual({ '/workspace/main.cpp': 'pa1b2c3d4e5f6' });
             expect(outputChannel.show).not.toHaveBeenCalled();
-            expect(showInformationMessage).not.toHaveBeenCalled();
+            expect(toastCalls()).toEqual([]);
             expect(result).toEqual(created);
         });
 
@@ -829,7 +832,7 @@ describe('contest controller', () => {
 
             await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
 
-            expect(showWarningMessage).toHaveBeenCalledWith(
+            expect(showInformationMessage).toHaveBeenCalledWith(
                 'Submit main.cpp to A. A + B?',
                 { modal: true, detail: 'A rejected attempt adds penalty time if you solve the problem later.' },
                 'Submit',
@@ -851,7 +854,7 @@ describe('contest controller', () => {
         });
 
         it('does not submit when the confirmation is cancelled', async () => {
-            showWarningMessage.mockResolvedValue(undefined);
+            showInformationMessage.mockResolvedValue(undefined);
             const snapshot = createSnapshot();
 
             const result = await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
@@ -910,7 +913,7 @@ describe('contest controller', () => {
 
         it('releases the submit guard after the confirmation is cancelled so the next submit proceeds', async () => {
             const snapshot = createSnapshot();
-            showWarningMessage.mockResolvedValueOnce(undefined).mockResolvedValue('Submit');
+            showInformationMessage.mockResolvedValueOnce(undefined).mockResolvedValue('Submit');
             sessionApi.submitSolution.mockResolvedValue(pending());
             const controller = buildLoggedInController(snapshot);
 
@@ -1148,7 +1151,7 @@ describe('contest controller', () => {
             const final = { ...pending(), status: 'ACCEPTED' };
             sessionApi.submitSolution.mockResolvedValue(pending());
             pollResolves(final);
-            showInformationMessage.mockResolvedValue('View Details');
+            showInformationMessage.mockImplementation(async (message) => (message.startsWith('Submit ') ? 'Submit' : 'View Details'));
 
             const result = await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
             await flushPromises();
@@ -1174,18 +1177,14 @@ describe('contest controller', () => {
             const final = { ...pending(), status: 'WRONG_ANSWER', hint: { expected: '3\n', received: '4\n' } };
             sessionApi.submitSolution.mockResolvedValue(pending());
             pollResolves(final);
-            showWarningMessage.mockImplementation(async (message) => {
-                if (message.startsWith('Submit ')) {
-                    return 'Submit';
-                }
-                return message.startsWith('Wrong Answer') ? 'Compare Output' : undefined;
-            });
+            showInformationMessage.mockImplementation(async (message) => (message.startsWith('Submit ') ? 'Submit' : undefined));
+            showWarningMessage.mockImplementation(async (message) => (message.startsWith('Wrong Answer') ? 'Compare Output' : undefined));
 
             await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
             await flushPromises();
 
             expect(showWarningMessage).toHaveBeenCalledWith('Wrong Answer on A. A + B (#27)', 'View Details', 'Compare Output');
-            expect(showInformationMessage).not.toHaveBeenCalled();
+            expect(toastCalls()).toEqual([]);
             expect(executeCommand).toHaveBeenCalledWith(
                 'vscode.diff',
                 fileUri(`${ROOT}/submission-output/27/expected.txt`),
@@ -1198,7 +1197,7 @@ describe('contest controller', () => {
             const snapshot = createSnapshot();
             sessionApi.submitSolution.mockResolvedValue(pending());
             pollResolves({ ...pending(), status: 'ACCEPTED' });
-            showInformationMessage.mockReturnValue(new Promise(() => {}));
+            showInformationMessage.mockImplementation((message) => (message.startsWith('Submit ') ? Promise.resolve('Submit') : new Promise(() => {})));
 
             await expect(buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]))
                 .resolves.toEqual(expect.objectContaining({ status: 'ACCEPTED' }));
@@ -1211,7 +1210,7 @@ describe('contest controller', () => {
             const result = await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
 
             expect(outputChannel.appendLine).toHaveBeenCalledWith('Submission #27 is still being judged. Checking again in 30 s.');
-            expect(showInformationMessage).not.toHaveBeenCalled();
+            expect(toastCalls()).toEqual([]);
             expect(showErrorMessage).not.toHaveBeenCalled();
             expect(result).toEqual(pending());
         });
@@ -1398,7 +1397,7 @@ describe('contest controller', () => {
 
         it('stops tracking with an error toast when the poll loop cannot run for a user submit', async () => {
             const snapshot = createSnapshot();
-            showWarningMessage.mockResolvedValue('Submit');
+            showInformationMessage.mockResolvedValue('Submit');
             sessionApi.submitSolution.mockResolvedValue({ id: 41, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } });
             sessionApi.pollSubmissionResults.mockRejectedValue(new Error('Log in to AutoJudge Contest before checking a submission result.'));
 
@@ -1907,7 +1906,7 @@ describe('contest controller', () => {
         it('offers only View Details in the verdict toast when the output is one-sided', async () => {
             const snapshot = createSnapshot();
             const submitted = { id: 31, status: 'WRONG_ANSWER', hint: { received: '4\n' }, problem: { publicId: 'pa1b2c3d4e5f6', title: 'A + B' } };
-            showWarningMessage.mockImplementation(async (message) => (message.startsWith('Submit ') ? 'Submit' : undefined));
+            showInformationMessage.mockImplementation(async (message) => (message.startsWith('Submit ') ? 'Submit' : undefined));
             sessionApi.submitSolution.mockResolvedValue(submitted);
 
             await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
