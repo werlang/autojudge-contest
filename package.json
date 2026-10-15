@@ -9,7 +9,8 @@
     "vscode": "^1.90.0"
   },
   "categories": [
-    "Programming Languages",
+    "Education",
+    "Testing",
     "Other"
   ],
   "keywords": [
@@ -43,6 +44,7 @@
     "onCommand:autojudgeContest.exportPublicCases",
     "onCommand:autojudgeContest.openSubmission",
     "onCommand:autojudgeContest.openTeamStanding",
+    "onCommand:autojudgeContest.compareSubmissionOutput",
     "onView:autojudgeContest.explorer",
     "onView:autojudgeContest.teams"
   ],
@@ -66,7 +68,7 @@
         },
         {
           "id": "autojudgeContest.teams",
-          "name": "Teams Standings",
+          "name": "Standings",
           "icon": "media/icon.svg"
         }
       ]
@@ -74,115 +76,229 @@
     "viewsWelcome": [
       {
         "view": "autojudgeContest.explorer",
-        "contents": "[Login Team](command:autojudgeContest.loginTeam)\n\nSign in with your AutoJudge team in the browser to load contest problems and submissions.",
+        "contents": "Log in with your team to see the contest problems and your submissions.\n[Log In with Browser](command:autojudgeContest.loginTeam)\nYour browser opens the AutoJudge team login. Enter the team code and PIN from your team card.",
+        "when": "autojudgeContest.state == loggedOut"
+      },
+      {
+        "view": "autojudgeContest.explorer",
+        "contents": "Loading the contest…",
+        "when": "autojudgeContest.state == loading"
+      },
+      {
+        "view": "autojudgeContest.explorer",
+        "contents": "Could not reach the AutoJudge server. Your session is kept.\n[Retry](command:autojudgeContest.refreshTree)\nCheck your connection or the [API URL setting](command:workbench.action.openSettings?%22autojudgeContest.baseUrl%22).",
+        "when": "autojudgeContest.state == offline"
+      },
+      {
+        "view": "autojudgeContest.teams",
+        "contents": "Log in to follow the live contest standings.\n[Log In with Browser](command:autojudgeContest.loginTeam)",
         "when": "autojudgeContest.state == loggedOut"
       },
       {
         "view": "autojudgeContest.teams",
-        "contents": "[Login Team](command:autojudgeContest.loginTeam)\n\nSign in to load the latest contest standings and inspect each team's solved problems.",
-        "when": "autojudgeContest.state == loggedOut"
+        "contents": "Loading the contest…",
+        "when": "autojudgeContest.state == loading"
+      },
+      {
+        "view": "autojudgeContest.teams",
+        "contents": "Could not reach the AutoJudge server. Your session is kept.\n[Retry](command:autojudgeContest.refreshTree)\nCheck your connection or the [API URL setting](command:workbench.action.openSettings?%22autojudgeContest.baseUrl%22).",
+        "when": "autojudgeContest.state == offline"
       }
     ],
     "commands": [
       {
         "command": "autojudgeContest.loginTeam",
-        "title": "AutoJudge Contest: Login Team",
-        "icon": "$(account)"
+        "title": "Log In",
+        "category": "AutoJudge Contest",
+        "icon": "$(sign-in)"
       },
       {
         "command": "autojudgeContest.logoutTeam",
-        "title": "AutoJudge Contest: Logout Team",
+        "title": "Log Out",
+        "category": "AutoJudge Contest",
         "icon": "$(sign-out)"
       },
       {
         "command": "autojudgeContest.refreshTree",
-        "title": "AutoJudge Contest: Refresh Contest Tree",
+        "title": "Refresh",
+        "category": "AutoJudge Contest",
         "icon": "$(refresh)"
       },
       {
         "command": "autojudgeContest.openContestDashboard",
-        "title": "AutoJudge Contest: Open Contest Dashboard",
-        "icon": "$(graph)"
+        "title": "Open Contest Overview",
+        "category": "AutoJudge Contest",
+        "icon": "$(dashboard)"
       },
       {
         "command": "autojudgeContest.openProblem",
-        "title": "AutoJudge Contest: Open Problem",
+        "title": "Open Problem Statement",
+        "category": "AutoJudge Contest",
         "icon": "$(book)"
       },
       {
         "command": "autojudgeContest.submitActiveFile",
-        "title": "AutoJudge Contest: Submit Active File",
+        "title": "Submit Active File…",
+        "category": "AutoJudge Contest",
         "icon": "$(cloud-upload)"
       },
       {
         "command": "autojudgeContest.exportPublicCases",
-        "title": "AutoJudge Contest: Export Public Cases",
-        "icon": "$(new-file)"
+        "title": "Export Public Test Cases",
+        "category": "AutoJudge Contest",
+        "icon": "$(beaker)"
       },
       {
         "command": "autojudgeContest.openSubmission",
-        "title": "AutoJudge Contest: Open Submission Result",
+        "title": "Open Submission",
+        "category": "AutoJudge Contest",
         "icon": "$(history)"
       },
       {
         "command": "autojudgeContest.openTeamStanding",
-        "title": "AutoJudge Contest: Open Team Standing",
+        "title": "Open Team Details",
+        "category": "AutoJudge Contest",
         "icon": "$(organization)"
+      },
+      {
+        "command": "autojudgeContest.compareSubmissionOutput",
+        "title": "Compare Expected and Received Output",
+        "category": "AutoJudge Contest",
+        "icon": "$(diff)"
       }
     ],
     "menus": {
       "view/title": [
         {
           "command": "autojudgeContest.refreshTree",
-          "when": "view == autojudgeContest.explorer",
-          "group": "navigation@100"
+          "when": "view == autojudgeContest.explorer && autojudgeContest.state != loggedOut && autojudgeContest.state != loading",
+          "group": "navigation@1"
         },
         {
-          "command": "autojudgeContest.loginTeam",
-          "when": "view == autojudgeContest.explorer && autojudgeContest.state == loggedOut",
-          "group": "navigation@110"
+          "command": "autojudgeContest.logoutTeam",
+          "when": "view == autojudgeContest.explorer && autojudgeContest.state != loggedOut && autojudgeContest.state != loading",
+          "group": "9_session@1"
         },
         {
           "command": "autojudgeContest.refreshTree",
-          "when": "view == autojudgeContest.teams && autojudgeContest.state == loggedIn",
-          "group": "navigation@100"
-        },
-        {
-          "command": "autojudgeContest.loginTeam",
-          "when": "view == autojudgeContest.teams && autojudgeContest.state == loggedOut",
-          "group": "navigation@110"
+          "when": "view == autojudgeContest.teams && autojudgeContest.state != loggedOut && autojudgeContest.state != loading",
+          "group": "navigation@1"
         },
         {
           "command": "autojudgeContest.logoutTeam",
-          "when": "view == autojudgeContest.explorer && autojudgeContest.state == loggedIn",
-          "group": "navigation@100"
-        },
-        {
-          "command": "autojudgeContest.logoutTeam",
-          "when": "view == autojudgeContest.teams && autojudgeContest.state == loggedIn",
-          "group": "navigation@110"
+          "when": "view == autojudgeContest.teams && autojudgeContest.state != loggedOut && autojudgeContest.state != loading",
+          "group": "9_session@1"
         }
       ],
       "view/item/context": [
         {
           "command": "autojudgeContest.openProblem",
           "when": "view == autojudgeContest.explorer && viewItem == autojudgeContest.problem",
-          "group": "inline@100"
-        },
-        {
-          "command": "autojudgeContest.submitActiveFile",
-          "when": "view == autojudgeContest.explorer && viewItem == autojudgeContest.problem",
-          "group": "inline@110"
+          "group": "inline@1"
         },
         {
           "command": "autojudgeContest.exportPublicCases",
           "when": "view == autojudgeContest.explorer && viewItem == autojudgeContest.problem",
-          "group": "inline@120"
+          "group": "inline@2"
+        },
+        {
+          "command": "autojudgeContest.submitActiveFile",
+          "when": "view == autojudgeContest.explorer && viewItem == autojudgeContest.problem",
+          "group": "inline@3"
+        },
+        {
+          "command": "autojudgeContest.openProblem",
+          "when": "view == autojudgeContest.explorer && viewItem == autojudgeContest.problem",
+          "group": "1_open@1"
+        },
+        {
+          "command": "autojudgeContest.exportPublicCases",
+          "when": "view == autojudgeContest.explorer && viewItem == autojudgeContest.problem",
+          "group": "2_test@1"
+        },
+        {
+          "command": "autojudgeContest.submitActiveFile",
+          "when": "view == autojudgeContest.explorer && viewItem == autojudgeContest.problem",
+          "group": "3_submit@1"
+        },
+        {
+          "command": "autojudgeContest.openSubmission",
+          "when": "view == autojudgeContest.explorer && viewItem =~ /^autojudgeContest\\.submission/",
+          "group": "1_open@1"
+        },
+        {
+          "command": "autojudgeContest.compareSubmissionOutput",
+          "when": "view == autojudgeContest.explorer && viewItem == autojudgeContest.submission.output",
+          "group": "inline@1"
+        },
+        {
+          "command": "autojudgeContest.compareSubmissionOutput",
+          "when": "view == autojudgeContest.explorer && viewItem == autojudgeContest.submission.output",
+          "group": "1_open@2"
+        },
+        {
+          "command": "autojudgeContest.openContestDashboard",
+          "when": "view == autojudgeContest.explorer && viewItem == autojudgeContest.contest",
+          "group": "1_open@1"
         },
         {
           "command": "autojudgeContest.openTeamStanding",
           "when": "view == autojudgeContest.teams && viewItem == autojudgeContest.standingTeam",
-          "group": "inline@100"
+          "group": "inline@1"
+        },
+        {
+          "command": "autojudgeContest.openTeamStanding",
+          "when": "view == autojudgeContest.teams && viewItem == autojudgeContest.standingTeam",
+          "group": "1_open@1"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "autojudgeContest.submitActiveFile",
+          "when": "autojudgeContest.state == loggedIn && resourceScheme == file && resourceExtname =~ /^\\.(c|cpp|java|js|php|py)$/",
+          "group": "navigation@100"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "autojudgeContest.openSubmission",
+          "when": "false"
+        },
+        {
+          "command": "autojudgeContest.openTeamStanding",
+          "when": "false"
+        },
+        {
+          "command": "autojudgeContest.compareSubmissionOutput",
+          "when": "false"
+        },
+        {
+          "command": "autojudgeContest.openProblem",
+          "when": "autojudgeContest.state == loggedIn"
+        },
+        {
+          "command": "autojudgeContest.exportPublicCases",
+          "when": "autojudgeContest.state == loggedIn"
+        },
+        {
+          "command": "autojudgeContest.submitActiveFile",
+          "when": "autojudgeContest.state == loggedIn"
+        },
+        {
+          "command": "autojudgeContest.openContestDashboard",
+          "when": "autojudgeContest.state == loggedIn"
+        },
+        {
+          "command": "autojudgeContest.logoutTeam",
+          "when": "autojudgeContest.state == loggedIn"
+        },
+        {
+          "command": "autojudgeContest.refreshTree",
+          "when": "autojudgeContest.state != loggedOut"
+        },
+        {
+          "command": "autojudgeContest.loginTeam",
+          "when": "autojudgeContest.state != loggedIn"
         }
       ]
     },
@@ -191,21 +307,26 @@
       "properties": {
         "autojudgeContest.baseUrl": {
           "type": "string",
+          "format": "uri",
           "default": "https://api.autojudge.io",
           "scope": "application",
-          "description": "Full AutoJudge API base URL used for contest problem browsing, submissions, and session hand-off. Defaults to https://api.autojudge.io."
+          "order": 1,
+          "markdownDescription": "Full AutoJudge API base URL used for contest problem browsing, submissions, and session hand-off. Defaults to `https://api.autojudge.io`."
         },
         "autojudgeContest.webUrl": {
           "type": "string",
+          "format": "uri",
           "default": "https://autojudge.io",
           "scope": "application",
-          "description": "AutoJudge web app address opened in the browser to log in your team. Defaults to https://autojudge.io."
+          "order": 2,
+          "markdownDescription": "AutoJudge web app address opened in the browser to log in your team. Defaults to `https://autojudge.io`."
         },
         "autojudgeContest.pollIntervalMs": {
           "type": "number",
           "default": 5000,
           "minimum": 1000,
-          "description": "Polling interval, in milliseconds, used while waiting for submission verdict updates."
+          "order": 3,
+          "markdownDescription": "How often, in milliseconds, a submitted solution is checked for its verdict. Defaults to `5000`; the minimum is `1000`."
         }
       }
     }

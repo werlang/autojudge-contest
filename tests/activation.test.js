@@ -166,7 +166,7 @@ describe('contest manifest contract', () => {
             }),
             expect.objectContaining({
                 id: 'autojudgeContest.teams',
-                name: 'Teams Standings',
+                name: 'Standings',
             }),
         ]));
         expect(manifest.contributes.viewsWelcome).toEqual(expect.arrayContaining([
@@ -188,7 +188,9 @@ describe('contest manifest contract', () => {
             'autojudgeContest.exportPublicCases',
             'autojudgeContest.openSubmission',
             'autojudgeContest.openTeamStanding',
+            'autojudgeContest.compareSubmissionOutput',
         ]));
+        expect(manifest.contributes.commands.every(command => command.category === 'AutoJudge Contest' && !command.title.startsWith('AutoJudge Contest:'))).toBe(true);
         expect(manifest.contributes.commands.map(command => command.command)).not.toContain('autojudgeContest.createTestCases');
         expect(manifest.contributes.menus['view/item/context']).toEqual(expect.arrayContaining([
             expect.objectContaining({
@@ -196,10 +198,18 @@ describe('contest manifest contract', () => {
                 when: expect.stringContaining('viewItem == autojudgeContest.problem'),
             }),
         ]));
+        // Submission rows open on click; the menu only adds the explicit open and compare actions.
         expect(manifest.contributes.menus['view/item/context']).not.toEqual(expect.arrayContaining([
             expect.objectContaining({
                 command: 'autojudgeContest.openSubmission',
-                when: expect.stringContaining('viewItem == autojudgeContest.submission'),
+                group: expect.stringMatching(/^inline/),
+            }),
+        ]));
+        // Logout lives in the overflow menu, never as a toolbar icon next to refresh.
+        expect(manifest.contributes.menus['view/title']).not.toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                command: 'autojudgeContest.logoutTeam',
+                group: expect.stringMatching(/^navigation/),
             }),
         ]));
         expect(manifest.contributes.configuration.properties).toEqual(expect.objectContaining({
