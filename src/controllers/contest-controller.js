@@ -18,12 +18,11 @@ import { resolveRouteId } from '../utils/public-id.js';
 import { getContestTiming, sortProblems, summarizeProblemSubmissions } from '../utils/contest-progress.js';
 import { extractPublicCases } from '../workspace/contest-public-cases.js';
 import { ContestPageFiles, resolvePreviewRoot } from '../workspace/contest-page-files.js';
-import { TEAM_PANEL_REFRESH_INTERVAL_MS } from '../utils/config.js';
+import { DEFAULT_POLL_INTERVAL_MS, TEAM_PANEL_REFRESH_INTERVAL_MS } from '../utils/config.js';
 
 const SUBMISSION_POLL_TIMEOUT_MS = 2 * 60 * 1000;
 // Wait before checking again a submission whose poll timed out while still pending.
 const SUBMISSION_POLL_BACKOFF_MS = 30 * 1000;
-const DEFAULT_POLL_INTERVAL_MS = 5000;
 // Standings refresh while the Standings view is hidden: keeps the status-bar rank fresh.
 const HIDDEN_STANDINGS_REFRESH_INTERVAL_MS = 60 * 1000;
 // Explorer re-render cadence so relative submission ages ("3 min ago") stay current.

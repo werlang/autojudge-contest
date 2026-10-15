@@ -3,8 +3,10 @@ import { normalizeBaseUrl } from '../services/contest-api.js';
 
 const DEFAULT_WEB_URL = 'https://autojudge.io';
 const DEFAULT_BASE_URL = 'https://api.autojudge.io';
-const DEFAULT_POLL_INTERVAL_MS = 5000;
 const MIN_POLL_INTERVAL_MS = 1000;
+
+/** Default post-submit verdict polling interval, also the controller fallback. */
+export const DEFAULT_POLL_INTERVAL_MS = 5000;
 
 export const SUPPORTED_EXTENSIONS = ['.c', '.cpp', '.java', '.js', '.php', '.py'];
 export const TEAM_PANEL_REFRESH_INTERVAL_MS = 15000;
