@@ -295,3 +295,61 @@ describe('kept helpers', () => {
         expect(formatSubmissionStatus(null)).toBe('Unknown');
     });
 });
+
+describe('inline escaping of server-provided text', () => {
+    const EVIL = 'Evil <img src="https://evil.example/t.png">\n## Fake [win](https://phish.example)';
+
+    it('renders a hostile team name as plain text on the standing and overview pages', () => {
+        const contest = { ...CONTEST, teams: [{ publicId: 'tevil0000000', name: EVIL, score: 0, solvedProblemIds: [] }] };
+        const team = contest.teams[0];
+
+        for (const page of [
+            renderTeamStandingDetails(team, { contest }),
+            renderContestDashboard(contest, { team }),
+        ]) {
+            expect(page).not.toContain('<img');
+            expect(page).not.toMatch(/^## Fake/m);
+            expect(page).not.toContain('[win](');
+            expect(page).toContain('Evil &lt;img src="https://evil.example/t.png"&gt; ## Fake \\[win\\](https://phish.example)');
+        }
+        expect(renderTeamStandingDetails(team, { contest }).split('\n')[0]).toMatch(/^# Evil &lt;img/);
+    });
+
+    it('escapes problem titles, contest names, filenames, languages and verdicts', () => {
+        const problem = { publicId: 'pevil0000000', order: 1, title: '# *bold* <b>x</b>\n- item' };
+        const page = renderProblemPage(problem, { problems: [problem] });
+        expect(page.split('\n')[0]).toBe('# A. # \\*bold\\* &lt;b&gt;x&lt;/b&gt; - item');
+
+        const submission = {
+            id: 7,
+            status: 'WRONG_ANSWER',
+            problem,
+            filename: '<script>alert(1)</script>\n# h.cpp',
+            language: '[x](https://phish.example)',
+        };
+        const details = renderSubmissionDetails(submission, { problems: [problem] });
+        expect(details).not.toContain('<script>');
+        expect(details).toContain('- **File:** &lt;script&gt;alert(1)&lt;/script&gt; # h.cpp');
+        expect(details).toContain('- **Language:** \\[x\\](https://phish.example)');
+        expect(details).toContain('- **Problem:** A. # \\*bold\\*');
+        expect(details).toContain('**Wrong Answer** for A. # \\*bold\\*');
+
+        const overview = renderContestDashboard({ name: '<i>Cup</i>\n# x', startTime: null });
+        expect(overview.split('\n')[0]).toBe('# Contest Overview · &lt;i&gt;Cup&lt;/i&gt; # x');
+
+        const solved = { ...CONTEST, problems: [problem], teams: [{ publicId: 't1', name: 'T', solvedProblemIds: ['pevil0000000'] }] };
+        expect(renderTeamStandingDetails(solved.teams[0], { contest: solved })).toContain('- A. # \\*bold\\*');
+    });
+
+    it('escapes a leading block marker and keeps plain names untouched', () => {
+        expect(renderTeamStandingDetails({ name: '- 1. x' }, null).split('\n')[0]).toBe('# \\- 1. x');
+        expect(renderTeamStandingDetails({ name: '1. first' }, null).split('\n')[0]).toBe('# 1\\. first');
+        expect(renderTeamStandingDetails({ name: 'Team Bits 42' }, null).split('\n')[0]).toBe('# Team Bits 42');
+    });
+
+    it('leaves problem statements as the Markdown the author wrote', () => {
+        const problem = { publicId: 'pmd000000000', title: 'MD', description: '## Input\n\nRead **n** integers.' };
+
+        expect(renderProblemPage(problem, { problems: [problem] })).toContain('## Input\n\nRead **n** integers.');
+    });
+});

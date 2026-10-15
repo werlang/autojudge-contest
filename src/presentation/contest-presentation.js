@@ -13,12 +13,18 @@ import { extractPublicCases } from '../workspace/contest-public-cases.js';
  *
  *   One-line summary sentence.
  *
- *   - **Label:** value          <- definition-style field list (no tables, so
- *   - **Label:** value             team names with `|` cannot break the layout)
+ *   - **Label:** value          <- definition-style field list
+ *   - **Label:** value
  *
  *   ## Section                   <- optional sections (statement, hint, cases)
  *
  * Fields whose value is missing are omitted instead of rendering `undefined`.
+ *
+ * Safety: every team, contest, problem, file and verdict name that is
+ * interpolated inline goes through `escapeInline`, so it renders as plain text
+ * (no forged headings, links or HTML). Judge output sits in code fences, public
+ * test case cells are entity-encoded, and problem statements are intentionally
+ * rendered as the Markdown the contest author wrote.
  */
 
 const MINUTE_MS = 60 * 1000;
@@ -63,7 +69,7 @@ export function formatSubmissionStatus(status) {
  */
 export function renderProblemPage(problem, { problems = [], submissions = [] } = {}) {
     const lines = [
-        `# ${getProblemPageName(problem, problems)}`,
+        `# ${escapeInline(getProblemPageName(problem, problems))}`,
         '',
         describeProblemProgress(problem, submissions),
         '',
@@ -89,12 +95,12 @@ export function renderProblemPage(problem, { problems = [], submissions = [] } =
  * @returns {string}
  */
 export function renderSubmissionDetails(submission, { problems = [] } = {}) {
-    const verdict = formatSubmissionStatus(submission?.status);
-    const problemLabel = formatSubmissionProblemLabel(submission?.problem, problems);
+    const verdict = escapeInline(formatSubmissionStatus(submission?.status));
+    const problemLabel = escapeInline(formatSubmissionProblemLabel(submission?.problem, problems));
     const relative = formatRelativeTime(submission?.submittedAt);
 
     const lines = [
-        `# ${getSubmissionHeading(submission)}`,
+        `# ${escapeInline(getSubmissionHeading(submission))}`,
         '',
         describeSubmission(submission, verdict, problemLabel),
         '',
@@ -109,8 +115,8 @@ export function renderSubmissionDetails(submission, { problems = [] } = {}) {
         ['Problem', problemLabel],
         ['Submitted', submittedAt],
         [isPassedSubmission(submission?.status) ? 'Time' : 'Penalty', formatOptionalMinutes(submission?.score)],
-        ['File', submission?.filename ?? submission?.fileName],
-        ['Language', submission?.language],
+        ['File', escapeInline(submission?.filename ?? submission?.fileName)],
+        ['Language', escapeInline(submission?.language)],
     ]));
 
     const hint = submission?.hint ?? {};
@@ -156,7 +162,7 @@ export function renderTeamStandingDetails(team, snapshot) {
     const solvedProblems = problems.filter(problem => solvedIds.includes(resolveRouteId(problem)));
     const solvedCount = countSolvedProblems(standing);
     const totalTime = formatMinutes(normalizeStandingScore(standing));
-    const name = getTeamPageName(team);
+    const name = escapeInline(getTeamPageName(team));
 
     const summary = rank == null
         ? `${name} is not in the current standings.`
@@ -179,7 +185,7 @@ export function renderTeamStandingDetails(team, snapshot) {
 
     if (solvedProblems.length) {
         for (const problem of solvedProblems) {
-            lines.push(`- ${formatProblemLabel(problem, problems)}`);
+            lines.push(`- ${escapeInline(formatProblemLabel(problem, problems))}`);
         }
     }
     else {
@@ -220,7 +226,7 @@ export function renderContestDashboard(contest, { team, problems } = {}, now = D
     }
 
     const lines = [
-        `# ${getContestPageName(contest)}`,
+        `# ${escapeInline(getContestPageName(contest))}`,
         '',
         describeContestPhase(timing),
         '',
@@ -239,7 +245,7 @@ export function renderContestDashboard(contest, { team, problems } = {}, now = D
 
     if (team) {
         const standing = findTeamStanding(contest, team, standings);
-        lines.push('', `## ${getTeamPageName(team)}`, '');
+        lines.push('', `## ${escapeInline(getTeamPageName(team))}`, '');
         lines.push(...renderFields([
             ['Rank', standing ? `#${standing.rank} of ${standings.length}` : '—'],
             ['Solved', standing ? `${countSolvedProblems(standing)} of ${problemCount}` : '—'],
@@ -520,6 +526,24 @@ function formatTableCell(value) {
             }));
 
     return `<code>${lines.join('<br>')}</code>`;
+}
+
+/**
+ * Escape a user- or server-provided value for inline Markdown so it renders as
+ * the plain text it is: newlines collapse to spaces, HTML `< > &` become
+ * entities, Markdown control characters are backslash-escaped, and a leading
+ * `#`, `>`, `-`, `+`, `=` or `1.` that could start a block is escaped too.
+ * @param {unknown} value
+ * @returns {string}
+ */
+function escapeInline(value) {
+    return toText(value)
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\u0000-\u001f\u007f\s]+/g, ' ')
+        .replace(/[&<>]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[char])
+        .replace(/[\\`*_[\]~|]/g, '\\$&')
+        .replace(/^([#+\-=])/, '\\$1')
+        .replace(/^(\d+)([.)])/, '$1\\$2');
 }
 
 /**
