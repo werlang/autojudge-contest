@@ -1478,6 +1478,61 @@ describe('contest controller', () => {
             expect(sessionApi.restoreContestSession).toHaveBeenCalledTimes(2);
         });
 
+        it('keeps skipping restore and standings while a second login still redeems after the first settles', async () => {
+            vi.useFakeTimers();
+            const old = createSnapshot();
+            const redeemA = deferred();
+            const redeemB = deferred();
+            const snapshotA = { ...newSessionSnapshot(), token: 'a-token' };
+            const snapshotB = newSessionSnapshot();
+            sessionApi.restoreContestSession.mockResolvedValue(old);
+            sessionApi.refreshContestDetails.mockResolvedValue(old.contest);
+            browserLogin.waitForHandoffCode.mockResolvedValueOnce('code-a').mockResolvedValueOnce('code-b');
+            sessionApi.redeemAndLoadContest.mockReturnValueOnce(redeemA.promise).mockReturnValueOnce(redeemB.promise);
+            const controller = buildController({ teamsView: createFakeView(true) });
+            await controller.refreshTree({ silent: true });
+
+            const loginA = controller.loginTeam();
+            await flushPromises();
+            const loginB = controller.loginTeam();
+            await flushPromises();
+            redeemA.resolve(snapshotA);
+            await expect(loginA).resolves.toBeNull();
+            await controller.refreshTree();
+            await vi.advanceTimersByTimeAsync(15000);
+
+            // B is still redeeming: nothing may read the old token or show A.
+            expect(sessionApi.restoreContestSession).toHaveBeenCalledTimes(1);
+            expect(sessionApi.refreshContestDetails).not.toHaveBeenCalled();
+            expect(treeProvider.setSnapshot).not.toHaveBeenCalledWith(snapshotA);
+
+            redeemB.resolve(snapshotB);
+            await expect(loginB).resolves.toBe(snapshotB);
+            expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(snapshotB);
+            await controller.refreshTree();
+            expect(sessionApi.restoreContestSession).toHaveBeenCalledTimes(2);
+        });
+
+        it('drops the snapshot of a login that redeems after a newer login already showed its own', async () => {
+            const redeemA = deferred();
+            const snapshotA = { ...newSessionSnapshot(), token: 'a-token' };
+            const snapshotB = newSessionSnapshot();
+            browserLogin.waitForHandoffCode.mockResolvedValueOnce('code-a').mockResolvedValueOnce('code-b');
+            sessionApi.redeemAndLoadContest.mockReturnValueOnce(redeemA.promise).mockResolvedValueOnce(snapshotB);
+            const controller = buildController();
+
+            const loginA = controller.loginTeam();
+            await flushPromises();
+            await controller.loginTeam();
+            redeemA.resolve(snapshotA);
+            await expect(loginA).resolves.toBeNull();
+
+            expect(treeProvider.setSnapshot).not.toHaveBeenCalledWith(snapshotA);
+            expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(snapshotB);
+            const loggedIn = outputChannel.appendLine.mock.calls.filter(([line]) => line.startsWith('Logged in as'));
+            expect(loggedIn).toHaveLength(1);
+        });
+
         it('keeps the new token when an upload from the old session ends with SESSION_ENDED', async () => {
             resolveConfirmBeforeSubmit.mockReturnValue(false);
             const old = createSnapshot();

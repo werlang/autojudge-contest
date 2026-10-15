@@ -157,11 +157,15 @@ export function createContestController({
     // async path captures it at its start and drops its result when it moved,
     // so a reply for an old session never touches the new one or its token.
     let sessionGeneration = 0;
-    // True while a login redeems its hand-off code: the generation already
+    // Number of logins redeeming a hand-off code right now (a counter, so one
+    // login settling never clears the flag of another): the generation already
     // moved but the new token is not stored yet, so a restore or standings
     // refresh started now would read the OLD token (and could clear the new
-    // one on SESSION_ENDED). Both are skipped until the redeem settles.
-    let loginRedeemInFlight = false;
+    // one on SESSION_ENDED). Both are skipped while it is above zero.
+    let loginRedeemsInFlight = 0;
+    // Id of the most recently started login; an older login whose redeem
+    // settles after a newer one started drops its result.
+    let latestLoginId = 0;
     // Token of the submit currently between its start and the judge POST
     // response; a second submit is refused meanwhile so it never double-posts.
     let sendingSubmit = null;
@@ -480,7 +484,7 @@ export function createContestController({
      * re-rendered. When the contest has just started, a full restore follows.
      */
     const refreshTeamsStandings = async () => {
-        if (teamsRefreshInFlight || loginRedeemInFlight) {
+        if (teamsRefreshInFlight || loginRedeemsInFlight > 0) {
             return;
         }
 
@@ -914,7 +918,7 @@ export function createContestController({
      * @returns {Promise<object | null>}
      */
     const restoreSession = async (silent) => {
-        if (loginRedeemInFlight) {
+        if (loginRedeemsInFlight > 0) {
             return null;
         }
 
@@ -1053,7 +1057,8 @@ export function createContestController({
                 );
                 // Redeeming replaces the stored token: from here on, results of
                 // the old session (restore, refresh, polls) are dropped.
-                loginRedeemInFlight = true;
+                loginRedeemsInFlight += 1;
+                const loginId = ++latestLoginId;
                 startNewSession();
                 redeeming = true;
                 let snapshot;
@@ -1065,9 +1070,15 @@ export function createContestController({
                     });
                 }
                 finally {
-                    loginRedeemInFlight = false;
+                    loginRedeemsInFlight -= 1;
                 }
                 redeeming = false;
+                // A newer login started while this one redeemed: its session
+                // owns the views now, so this snapshot must not replace it.
+                if (loginId !== latestLoginId) {
+                    return null;
+                }
+
                 sessionEndedPromptShown = false;
                 log('info', `Logged in as ${toText(snapshot.team?.name) || 'your team'} for ${toText(snapshot.contest?.name) || 'the contest'}.`);
                 await syncTreeState(snapshot);
@@ -1075,8 +1086,9 @@ export function createContestController({
                 return snapshot;
             }
             catch (error) {
-                // A failed redeem keeps the shown snapshot; resume its verdict polls.
-                if (redeeming && currentSnapshot && !isSessionEnded(error)) {
+                // A failed redeem keeps the shown snapshot; resume its verdict
+                // polls unless another login is still redeeming (it decides).
+                if (redeeming && loginRedeemsInFlight === 0 && currentSnapshot && !isSessionEnded(error)) {
                     pollPendingSubmissions();
                 }
 
