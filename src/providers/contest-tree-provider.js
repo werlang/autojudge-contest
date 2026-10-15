@@ -398,13 +398,14 @@ function buildSubmissionTooltip(submission, status) {
 }
 
 /**
- * Check whether a submission carries expected or received output to diff.
+ * Check whether a submission carries both expected and received output to diff,
+ * matching the submission page tip and the compare command.
  * @param {object} submission
  * @returns {boolean}
  */
 function hasComparableOutput(submission) {
     const hint = submission?.hint;
-    return Boolean(hint) && (hint.expected != null || hint.received != null);
+    return Boolean(hint) && hint.expected != null && hint.received != null;
 }
 
 /**

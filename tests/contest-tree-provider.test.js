@@ -299,14 +299,16 @@ describe('contest tree provider', () => {
         ]);
     });
 
-    it('marks submissions whose hint carries expected or received output as comparable', () => {
+    it('marks only submissions whose hint carries both expected and received output as comparable', () => {
         const provider = createProvider({
             problems: [{ publicId: 'pa', order: 1, title: 'A + B' }],
             submissions: [
                 buildSubmission(1, 'WRONG_ANSWER', 'pa', 10, { hint: { expected: '3', received: '4' } }),
-                buildSubmission(2, 'WRONG_ANSWER', 'pa', 9, { hint: { expected: null, received: '' } }),
-                buildSubmission(3, 'WRONG_ANSWER', 'pa', 8, { hint: { message: 'nope', expected: null, received: null } }),
-                buildSubmission(4, 'WRONG_ANSWER', 'pa', 7),
+                buildSubmission(2, 'WRONG_ANSWER', 'pa', 9, { hint: { expected: '', received: '' } }),
+                buildSubmission(3, 'WRONG_ANSWER', 'pa', 8, { hint: { expected: null, received: '4' } }),
+                buildSubmission(4, 'WRONG_ANSWER', 'pa', 7, { hint: { expected: '3' } }),
+                buildSubmission(5, 'WRONG_ANSWER', 'pa', 6, { hint: { message: 'nope', expected: null, received: null } }),
+                buildSubmission(6, 'WRONG_ANSWER', 'pa', 5),
             ],
         });
         const [, problem] = provider.getChildren();
@@ -314,6 +316,8 @@ describe('contest tree provider', () => {
         expect(provider.getChildren(problem).map(item => item.contextValue)).toEqual([
             TREE_CONTEXT.SUBMISSION_WITH_OUTPUT,
             TREE_CONTEXT.SUBMISSION_WITH_OUTPUT,
+            TREE_CONTEXT.SUBMISSION,
+            TREE_CONTEXT.SUBMISSION,
             TREE_CONTEXT.SUBMISSION,
             TREE_CONTEXT.SUBMISSION,
         ]);

@@ -47,6 +47,6 @@ export const TREE_CONTEXT = Object.freeze({
     PROBLEM: 'autojudgeContest.problem',
     STANDING_TEAM: 'autojudgeContest.standingTeam',
     SUBMISSION: 'autojudgeContest.submission',
-    // A submission whose hint carries expected and received output, so it can be diffed.
+    // A submission whose hint carries both expected and received output, so it can be diffed.
     SUBMISSION_WITH_OUTPUT: 'autojudgeContest.submission.output',
 });
