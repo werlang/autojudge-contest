@@ -552,15 +552,17 @@ function renderOutputDiff(expected, received, rawDiffers) {
  * @returns {boolean}
  */
 function isWhitespaceOnlyDiff(diff) {
-    const removed = diff.filter(line => line.startsWith('-')).map(line => line.slice(1).trimEnd());
-    const added = diff.filter(line => line.startsWith('+')).map(line => line.slice(1).trimEnd());
+    const removed = diff.filter(line => line.startsWith('-')).map(line => line.slice(2).trimEnd());
+    const added = diff.filter(line => line.startsWith('+')).map(line => line.slice(2).trimEnd());
 
     return removed.length === added.length && removed.every((line, index) => line === added[index]);
 }
 
 /**
- * Line diff from a longest-common-subsequence table: shared lines get a leading
- * space, expected-only lines `-`, received-only lines `+` (removals first).
+ * Line diff from a longest-common-subsequence table. Every line is a marker, a
+ * space, then the content: shared lines get two spaces, expected-only lines
+ * `- `, received-only lines `+ ` (removals first). The separating space keeps
+ * content such as `-1` readable and the columns aligned.
  * @param {string[]} expected
  * @param {string[]} received
  * @returns {string[]}
@@ -581,14 +583,14 @@ function diffLines(expected, received) {
     let j = 0;
     while (i < expected.length || j < received.length) {
         if (i < expected.length && j < received.length && expected[i] === received[j]) {
-            diff.push(` ${expected[i]}`);
+            diff.push(`  ${expected[i]}`);
             i += 1;
             j += 1;
         } else if (j >= received.length || (i < expected.length && common[i + 1][j] >= common[i][j + 1])) {
-            diff.push(`-${expected[i]}`);
+            diff.push(`- ${expected[i]}`);
             i += 1;
         } else {
-            diff.push(`+${received[j]}`);
+            diff.push(`+ ${received[j]}`);
             j += 1;
         }
     }

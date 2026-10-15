@@ -150,9 +150,20 @@ describe('renderSubmissionDetails', () => {
 
         expect(page).toContain('## Output difference');
         expect(page).toContain('`-` expected, `+` your output');
-        expect(page).toContain('```diff\n 42\n 17\n-8\n+9\n```');
+        expect(page).toContain('```diff\n  42\n  17\n- 8\n+ 9\n```');
         expect(page.indexOf('## Output difference')).toBeLessThan(page.indexOf('### Expected'));
         expect(page).toContain('### Expected\n\n```text\n42\n17\n8\n```');
+    });
+
+    it('separates the diff marker from the content so negative numbers stay readable', () => {
+        const page = renderSubmissionDetails({
+            id: 14,
+            status: 'WRONG_ANSWER',
+            hint: { expected: '7\n-1\n12', received: '7\n0\n12' },
+        });
+
+        expect(page).toContain('```diff\n  7\n- -1\n+ 0\n  12\n```');
+        expect(page).not.toContain('--1');
     });
 
     it('diffs added and missing lines and fences backticks in the diff', () => {
@@ -162,7 +173,7 @@ describe('renderSubmissionDetails', () => {
             hint: { expected: 'a\nb\n```', received: 'b\nc\n```' },
         });
 
-        expect(page).toContain('````diff\n-a\n b\n+c\n ```\n````');
+        expect(page).toContain('````diff\n- a\n  b\n+ c\n  ```\n````');
     });
 
     it('notes whitespace-only differences in the diff', () => {
@@ -174,7 +185,7 @@ describe('renderSubmissionDetails', () => {
         });
 
         // CRLF vs LF, a trailing newline, and trailing spaces all look identical.
-        expect(render('1\n2\n', '1\r\n2\r\n')).toContain(`\`\`\`diff\n 1\n 2\n\`\`\`\n\n${note}`);
+        expect(render('1\n2\n', '1\r\n2\r\n')).toContain(`\`\`\`diff\n  1\n  2\n\`\`\`\n\n${note}`);
         expect(render('3\n', '3')).toContain(note);
         expect(render('1 \n2', '1\n2')).toContain(note);
         expect(render('1\n2', '1\n2 ')).toContain(note);
