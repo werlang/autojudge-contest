@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { INVALID_SETTING_CODE, REQUEST_TIMEOUT_MS, getSubmissions, isSessionEnded, normalizeBaseUrl, redeemHandoffCode } from '../src/services/contest-api.js';
+import { INVALID_SETTING_CODE, REQUEST_TIMEOUT_CODE, REQUEST_TIMEOUT_MS, SUBMIT_TIMEOUT_MS, getSubmissions, isSessionEnded, normalizeBaseUrl, redeemHandoffCode, submitSolution } from '../src/services/contest-api.js';
 
 const fetchMock = vi.fn();
 
@@ -50,6 +50,19 @@ describe('request timeout', () => {
         await expect(request).rejects.toThrow('The AutoJudge server did not respond in time.');
         expect(timeoutSpy).toHaveBeenCalledWith(REQUEST_TIMEOUT_MS);
         expect(REQUEST_TIMEOUT_MS).toBe(20000);
+    });
+
+    it('gives a solution upload the longer timeout and codes its timeout error', async () => {
+        const timeout = new AbortController();
+        const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal);
+        hangUntilAborted();
+
+        const request = submitSolution({ baseUrl: 'https://api.autojudge.test', code: 'Yw==', filename: 'a.c', problemId: 'p1', token: 't' });
+        timeout.abort();
+
+        await expect(request).rejects.toMatchObject({ code: REQUEST_TIMEOUT_CODE });
+        expect(timeoutSpy).toHaveBeenCalledWith(SUBMIT_TIMEOUT_MS);
+        expect(SUBMIT_TIMEOUT_MS).toBe(60000);
     });
 
     it('keeps the caller abort error when the caller signal aborts first', async () => {

@@ -989,6 +989,20 @@ describe('contest controller', () => {
             }));
         });
 
+        it('warns that a timed-out upload may have been accepted and reloads the submissions', async () => {
+            resolveConfirmBeforeSubmit.mockReturnValue(false);
+            const snapshot = createSnapshot();
+            sessionApi.submitSolution.mockRejectedValue(Object.assign(new Error('The AutoJudge server did not respond in time.'), { code: 'REQUEST_TIMEOUT' }));
+            sessionApi.restoreContestSession.mockResolvedValue(snapshot);
+
+            const result = await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+
+            expect(result).toBeNull();
+            expect(showErrorMessage).toHaveBeenCalledWith('The upload did not finish in time. Check Contest Explorer before submitting again.');
+            expect(sessionApi.restoreContestSession).toHaveBeenCalledTimes(1);
+            expect(withExplorerProgress).not.toHaveBeenCalled();
+        });
+
         it('passes the resolved poll interval through unchanged', async () => {
             const snapshot = createSnapshot();
             resolvePollIntervalMs.mockReturnValue(2500);

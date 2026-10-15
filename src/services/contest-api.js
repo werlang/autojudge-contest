@@ -29,6 +29,18 @@ export const INVALID_SETTING_CODE = 'INVALID_SETTING';
  */
 export const REQUEST_TIMEOUT_MS = 20 * 1000;
 
+/**
+ * Longer timeout for a solution upload: a slow upload may still be accepted,
+ * so it gets more time before the extension gives up on it.
+ */
+export const SUBMIT_TIMEOUT_MS = 60 * 1000;
+
+/**
+ * Error code attached to a request aborted by its timeout, so callers can
+ * tell "no answer in time" from a server error.
+ */
+export const REQUEST_TIMEOUT_CODE = 'REQUEST_TIMEOUT';
+
 const REQUEST_TIMEOUT_MESSAGE = 'The AutoJudge server did not respond in time.';
 
 /**
@@ -169,7 +181,8 @@ export async function getSubmissions({ baseUrl, token, signal }) {
 }
 
 /**
- * Submit source code for one contest problem as the authenticated team.
+ * Submit source code for one contest problem as the authenticated team. The
+ * upload gets SUBMIT_TIMEOUT_MS instead of the default request timeout.
  * @param {{ baseUrl: string, code: string, filename: string, problemId: string, token: string, signal?: AbortSignal }} options
  * @returns {Promise<{ submission?: object } | object>}
  */
@@ -188,6 +201,7 @@ export async function submitSolution({ baseUrl, code, filename, problemId, token
         },
         method: 'POST',
         signal,
+        timeoutMs: SUBMIT_TIMEOUT_MS,
     });
 }
 
@@ -218,10 +232,11 @@ function buildAuthHeaders(token) {
  * stop). VS Code ^1.90 runs on Node >= 20.9, which has both
  * `AbortSignal.timeout` and `AbortSignal.any`.
  * @param {AbortSignal | undefined} signal
+ * @param {number} timeoutMs
  * @returns {{ signal: AbortSignal, timeoutSignal: AbortSignal }}
  */
-function withRequestTimeout(signal) {
-    const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+function withRequestTimeout(signal, timeoutMs) {
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
     return {
         signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
         timeoutSignal,
@@ -230,14 +245,15 @@ function withRequestTimeout(signal) {
 
 /**
  * Execute a JSON API request and preserve the backend message on failure. A
- * request (body read included) that runs past REQUEST_TIMEOUT_MS rejects with
- * a clear error; a caller abort rejects with the fetch AbortError unchanged.
- * @param {{ baseUrl: string, endpoint: string, headers?: Record<string, string>, method: string, signal?: AbortSignal, body?: unknown }} options
+ * request (body read included) that runs past `timeoutMs` rejects with a clear
+ * error coded REQUEST_TIMEOUT; a caller abort rejects with the fetch
+ * AbortError unchanged.
+ * @param {{ baseUrl: string, endpoint: string, headers?: Record<string, string>, method: string, signal?: AbortSignal, body?: unknown, timeoutMs?: number }} options
  * @returns {Promise<any>}
  */
-async function requestJson({ baseUrl, endpoint, headers, method, signal, body }) {
+async function requestJson({ baseUrl, endpoint, headers, method, signal, body, timeoutMs = REQUEST_TIMEOUT_MS }) {
     const url = buildEndpointUrl(baseUrl, endpoint);
-    const timeout = withRequestTimeout(signal);
+    const timeout = withRequestTimeout(signal, timeoutMs);
     let response;
     let payload;
 
@@ -260,7 +276,7 @@ async function requestJson({ baseUrl, endpoint, headers, method, signal, body })
     }
     catch (error) {
         if (timeout.timeoutSignal.aborted && !signal?.aborted) {
-            throw new Error(REQUEST_TIMEOUT_MESSAGE);
+            throw Object.assign(new Error(REQUEST_TIMEOUT_MESSAGE), { code: REQUEST_TIMEOUT_CODE });
         }
 
         throw error;

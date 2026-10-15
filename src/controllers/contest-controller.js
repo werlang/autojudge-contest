@@ -11,7 +11,7 @@ import {
     renderSubmissionDetails,
     renderTeamStandingDetails,
 } from '../presentation/contest-presentation.js';
-import { HANDOFF_INVALID_CODE, INVALID_SETTING_CODE, isSessionEnded } from '../services/contest-api.js';
+import { HANDOFF_INVALID_CODE, INVALID_SETTING_CODE, REQUEST_TIMEOUT_CODE, isSessionEnded } from '../services/contest-api.js';
 import { BrowserLoginError, LOGIN_FAILURE } from '../services/browser-login.js';
 import { hasComparableOutput, isPassedSubmission, isPendingSubmission } from '../utils/submission-status.js';
 import { resolveRouteId } from '../utils/public-id.js';
@@ -47,6 +47,7 @@ const HANDOFF_INVALID_MESSAGE = 'The browser login link expired or was already u
 const CONTEST_NOT_STARTED_MESSAGE = 'The contest has not started yet. The problems load automatically once it starts.';
 const LOGGED_OUT_MESSAGE = 'Log in to AutoJudge Contest first.';
 const SUBMIT_IN_PROGRESS_MESSAGE = 'A submission is already being sent. Wait for it to finish.';
+const UPLOAD_TIMEOUT_MESSAGE = 'The upload did not finish in time. Check Contest Explorer before submitting again.';
 
 /**
  * Write one line to the output channel at the given level. A LogOutputChannel
@@ -1284,7 +1285,17 @@ export function createContestController({
                 return await trackSubmission(submission, { problem, userInitiated: true });
             }
             catch (error) {
-                return handleFailure(error, generation);
+                if (error?.code !== REQUEST_TIMEOUT_CODE) {
+                    return handleFailure(error, generation);
+                }
+
+                // A timed-out upload may still have been accepted: say so instead
+                // of inviting a duplicate submit, and reload the submissions.
+                await handleFailure(new Error(UPLOAD_TIMEOUT_MESSAGE), generation);
+                if (generation === sessionGeneration) {
+                    void restoreSession(true);
+                }
+                return null;
             }
             finally {
                 releaseSubmit();
