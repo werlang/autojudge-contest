@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pending verdicts share one poll loop: one request per interval covers every pending submission, network errors are retried, and a verdict still pending after 2 minutes is checked again 30 seconds later.
 - The submit confirmation is an information dialog rather than a warning.
 - When every problem is solved, Submit Active File… says **All problems are solved.** instead of opening a picker.
+- Marketplace listing: a new description, `online judge` and `icpc` keywords, a dark gallery banner, and an issue tracker link.
 
 ### Fixed
 
