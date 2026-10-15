@@ -89,7 +89,7 @@ describe('contest tree provider', () => {
         expect(provider.getChildren()).toEqual([]);
     });
 
-    it('renders the contest header with the proper-case name, team, and time left', () => {
+    it('renders the contest header with the contest name and only the team name, keeping timing in the tooltip', () => {
         const listener = vi.fn();
         const provider = new ContestTreeProvider({ now: () => NOW });
         provider.onDidChangeTreeData(listener);
@@ -105,7 +105,7 @@ describe('contest tree provider', () => {
         expect(header).toEqual(expect.objectContaining({
             id: 'contest:k3m9x2p7q8w1a',
             label: 'Regional Final',
-            description: 'Bits · 2h 12m left',
+            description: 'Bits',
             contextValue: TREE_CONTEXT.CONTEST,
             iconPath: expect.objectContaining({ id: 'mortar-board' }),
             command: expect.objectContaining({
@@ -115,18 +115,24 @@ describe('contest tree provider', () => {
         }));
         expect(header.tooltip).toContain('Regional Final');
         expect(header.tooltip).toContain('Team: Bits');
+        expect(header.tooltip).toContain('Status: 2h 12m left');
         expect(header.tooltip).toContain('Starts: ');
         expect(header.tooltip).toContain('Ends: ');
         expect(listener).toHaveBeenCalledTimes(1);
     });
 
-    it('describes ended and not-yet-started contests in the header', () => {
-        expect(createProvider({}, START + 200 * MINUTE).getChildren()[0].description).toBe('Bits · Ended');
-        expect(createProvider({}, START - 25 * MINUTE).getChildren()[0].description).toBe('Bits · Starts in 25m');
-        expect(createProvider({
+    it('describes ended and not-yet-started contests in the header tooltip, not the description', () => {
+        const ended = createProvider({}, START + 200 * MINUTE).getChildren()[0];
+        const upcoming = createProvider({}, START - 25 * MINUTE).getChildren()[0];
+        const unscheduled = createProvider({
             contest: buildContest({ startTime: null }),
             contestNotStarted: true,
-        }).getChildren()[0].description).toBe('Bits · Not started');
+        }).getChildren()[0];
+
+        expect([ended, upcoming, unscheduled].map(header => header.description)).toEqual(['Bits', 'Bits', 'Bits']);
+        expect(ended.tooltip).toContain('Status: Ended');
+        expect(upcoming.tooltip).toContain('Status: Starts in 25m');
+        expect(unscheduled.tooltip).toContain('Status: Not started');
     });
 
     it('trusts the clock over a sticky not-started flag once the contest is running', () => {
@@ -135,7 +141,7 @@ describe('contest tree provider', () => {
             problems: [{ publicId: 'pa1b2c3d4e5f6', order: 1, title: 'A + B' }],
         }).getChildren();
 
-        expect(rootChildren[0].description).toBe('Bits · 2h 12m left');
+        expect(rootChildren[0].tooltip).toContain('Status: 2h 12m left');
         expect(rootChildren).toHaveLength(2);
         expect(rootChildren[1]).toEqual(expect.objectContaining({
             label: 'Contest started',
@@ -149,6 +155,7 @@ describe('contest tree provider', () => {
 
         expect(header.label).toBe('Contest');
         expect(header.description).toBe('Bits');
+        expect(header.tooltip).not.toContain('Status:');
     });
 
     it('shows a not-started note instead of problems while the contest has not started', () => {

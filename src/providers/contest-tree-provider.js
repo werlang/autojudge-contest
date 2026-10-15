@@ -29,7 +29,7 @@ const JUDGING_LABEL = 'Judging…';
 
 /**
  * Provide the contest explorer tree for logged-in contest snapshots: a contest
- * header with live timing, then one row per problem (letter, title, solved or
+ * header (contest and team name), then one row per problem (letter, title, solved or
  * attempt state) with that problem's submissions nested newest-first.
  */
 export class ContestTreeProvider {
@@ -59,7 +59,7 @@ export class ContestTreeProvider {
     }
 
     /**
-     * Refresh the full tree (also re-renders relative times and the countdown)
+     * Refresh the full tree (also re-renders relative times and the timing tooltip)
      * and optionally update the visible state label.
      * @param {'loggedIn' | 'loggedOut'} [state]
      */
@@ -193,7 +193,9 @@ export class ContestTreeProvider {
 }
 
 /**
- * Build the contest header row: the contest name, then team and timing.
+ * Build the contest header row: the contest name with the team name as its
+ * description. Timing and rank live in the status bar, so the row stays short;
+ * the tooltip still carries timing, team, and local start/end times.
  * @param {{ team?: object, contest?: object, contestNotStarted?: boolean }} snapshot
  * @param {number} now
  * @returns {Record<string, unknown>}
@@ -209,7 +211,7 @@ function buildContestHeaderItem(snapshot, now) {
     return {
         id: publicId ? `contest:${publicId}` : 'contest',
         label: contestName,
-        description: [teamName, timingText].filter(Boolean).join(' · '),
+        description: teamName,
         collapsibleState: 0,
         contextValue: TREE_CONTEXT.CONTEST,
         iconPath: new vscode.ThemeIcon('mortar-board', new vscode.ThemeColor('charts.blue')),
