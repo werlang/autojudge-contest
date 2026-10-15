@@ -263,7 +263,7 @@ describe('contest tree provider', () => {
     });
 
     it('maps each verdict to an icon, using the failure color for time limits and a neutral icon for unknowns', () => {
-        const statuses = ['ACCEPTED', 'WRONG_ANSWER', 'TIME_LIMIT_EXCEEDED', 'RUNTIME_ERROR', 'COMPILATION_ERROR', 'PENDING', 'SOMETHING_NEW'];
+        const statuses = ['ACCEPTED', 'WRONG_ANSWER', 'TIME_LIMIT_EXCEEDED', 'RUNTIME_ERROR', 'COMPILATION_ERROR', 'PARSING_ERROR', 'ERROR', 'PENDING', 'SOMETHING_NEW'];
         const provider = createProvider({
             problems: [{ publicId: 'pa', order: 1, title: 'A + B' }],
             submissions: statuses.map((status, index) => buildSubmission(index + 1, status, 'pa', 40 - index)),
@@ -275,6 +275,8 @@ describe('contest tree provider', () => {
             ['pass-filled', 'testing.iconPassed'],
             ['error', 'testing.iconFailed'],
             ['watch', 'testing.iconFailed'],
+            ['warning', 'testing.iconFailed'],
+            ['warning', 'testing.iconFailed'],
             ['warning', 'testing.iconFailed'],
             ['warning', 'testing.iconFailed'],
             ['loading~spin', 'charts.yellow'],

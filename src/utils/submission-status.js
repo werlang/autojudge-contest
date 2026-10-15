@@ -2,7 +2,7 @@ const PASSED_STATUSES = new Set(['ACCEPTED', 'OK', 'PASS']);
 const PENDING_STATUSES = new Set(['PENDING', 'QUEUED', 'RUNNING', 'JUDGING']);
 const FAILED_STATUSES = new Set(['WRONG_ANSWER', 'FAILED', 'REJECTED']);
 const TIME_LIMIT_STATUSES = new Set(['TIME_LIMIT_EXCEEDED', 'TIMEOUT']);
-const ERROR_STATUSES = new Set(['RUNTIME_ERROR', 'COMPILATION_ERROR', 'INTERNAL_ERROR', 'ERROR']);
+const ERROR_STATUSES = new Set(['RUNTIME_ERROR', 'COMPILATION_ERROR', 'INTERNAL_ERROR', 'PARSING_ERROR', 'ERROR']);
 
 /**
  * Return whether the submission should be shown as a failed result.
