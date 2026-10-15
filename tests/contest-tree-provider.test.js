@@ -139,7 +139,7 @@ describe('contest tree provider', () => {
         expect(rootChildren).toHaveLength(2);
         expect(rootChildren[1]).toEqual(expect.objectContaining({
             label: 'Contest started',
-            description: 'Refresh to load the problems',
+            description: 'Loading the problems…',
         }));
         expect(rootChildren[1].command).toBeUndefined();
     });
@@ -160,7 +160,7 @@ describe('contest tree provider', () => {
         expect(rootChildren).toEqual([
             expect.objectContaining({ label: 'Regional Final' }),
             expect.objectContaining({
-                description: 'Refresh when it starts',
+                description: 'Problems appear when it starts',
                 label: 'Contest has not started yet',
             }),
         ]);

@@ -431,7 +431,8 @@ function getSubmissionIcon(status) {
 
 /**
  * Build the explorer note shown in place of the problems until they are loaded.
- * It has no command because there is nothing to open yet; refresh loads the problems.
+ * It has no command because there is nothing to open yet; the problems load on
+ * their own once the contest starts, so no refresh is needed.
  * @param {boolean} [started=false] the contest clock says it already began
  * @returns {Record<string, unknown>}
  */
@@ -439,7 +440,7 @@ function buildNotStartedItem(started = false) {
     return {
         id: started ? 'contest-started' : 'contest-not-started',
         label: started ? 'Contest started' : 'Contest has not started yet',
-        description: started ? 'Refresh to load the problems' : 'Refresh when it starts',
+        description: started ? 'Loading the problems…' : 'Problems appear when it starts',
         collapsibleState: 0,
         iconPath: new vscode.ThemeIcon('clock'),
     };
