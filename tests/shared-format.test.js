@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formatDuration, formatLocalDateTime, formatMinutes, formatRelativeTime } from '../src/utils/time-format.js';
-import { getContestDurationMinutes, getContestTiming, getProblemLetter, sortProblems, summarizeProblemSubmissions } from '../src/utils/contest-progress.js';
+import { getContestDurationMinutes, getContestTiming, getProblemLetter, getProblemTitle, sortProblems, summarizeProblemSubmissions } from '../src/utils/contest-progress.js';
 
 describe('time formatting', () => {
     it('formats minutes with at most one decimal', () => {
@@ -90,6 +90,14 @@ describe('contest progress', () => {
         expect(getProblemLetter({ publicId: 'x' }, problems)).toBe('');
         const many = Array.from({ length: 28 }, (_, index) => ({ publicId: `p${index}`, order: index }));
         expect(getProblemLetter({ publicId: 'p26' }, many)).toBe('AA');
+    });
+
+    it('resolves one problem title from title, then name, then the letter', () => {
+        expect(getProblemTitle({ title: ' Sum ', name: 'Other' }, 'A')).toBe('Sum');
+        expect(getProblemTitle({ name: ' Sum ' }, 'A')).toBe('Sum');
+        expect(getProblemTitle({ title: '  ' }, 'B')).toBe('Problem B');
+        expect(getProblemTitle({})).toBe('Problem');
+        expect(getProblemTitle(null, '')).toBe('Problem');
     });
 
     it('summarizes the team submissions for one problem', () => {

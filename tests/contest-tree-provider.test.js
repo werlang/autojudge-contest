@@ -21,6 +21,7 @@ vi.mock('vscode', () => ({
 }), { virtual: true });
 
 import { ContestTreeProvider } from '../src/providers/contest-tree-provider.js';
+import { getProblemPageName } from '../src/presentation/contest-presentation.js';
 import { COMMANDS, TREE_CONTEXT } from '../src/constants.js';
 
 const START = Date.parse('2026-05-28T02:00:00.000Z');
@@ -232,6 +233,14 @@ describe('contest tree provider', () => {
         }).getChildren();
 
         expect(problem.description).toBe('✓ Solved · Judging… · 2 attempts');
+    });
+
+    it('labels a problem the same way in the explorer and on its page', () => {
+        const problems = [{ publicId: 'pa', order: 1, name: 'Sum' }, { publicId: 'pb', order: 2 }];
+        const rows = createProvider({ problems }).getChildren().slice(1);
+
+        expect(rows.map(item => item.label)).toEqual(['A. Sum', 'B. Problem B']);
+        expect(rows.map(item => item.label)).toEqual(problems.map(problem => getProblemPageName(problem, problems)));
     });
 
     it('survives problems without a title or color', () => {

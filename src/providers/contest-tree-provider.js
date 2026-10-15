@@ -5,6 +5,7 @@ import { resolveRouteId, sameEntity } from '../utils/public-id.js';
 import {
     getContestTiming,
     getProblemLetter,
+    getProblemTitle,
     sortProblems,
     summarizeProblemSubmissions,
 } from '../utils/contest-progress.js';
@@ -159,7 +160,7 @@ export class ContestTreeProvider {
      */
     buildProblemItem(problem, problems, submissions, now) {
         const letter = getProblemLetter(problem, problems);
-        const title = resolveProblemTitle(problem, letter);
+        const title = getProblemTitle(problem, letter);
         const summary = summarizeProblemSubmissions(problem, submissions);
         const children = submissions
             .filter(submission => sameEntity(submission?.problem, problem))
@@ -452,16 +453,6 @@ function buildNotStartedItem(started = false) {
         collapsibleState: 0,
         iconPath: new vscode.ThemeIcon('clock'),
     };
-}
-
-/**
- * Resolve a problem's display title, falling back to `Problem <letter>`.
- * @param {object} problem
- * @param {string} letter
- * @returns {string}
- */
-function resolveProblemTitle(problem, letter) {
-    return problem?.title?.toString().trim() || (letter ? `Problem ${letter}` : 'Problem');
 }
 
 /**

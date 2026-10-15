@@ -2,7 +2,7 @@ import { isPassedSubmission, isPendingSubmission } from '../utils/submission-sta
 import { countSolvedProblems, normalizeStandingScore, resolveStandingTeams } from '../utils/standings.js';
 import { resolveRouteId, sameEntity, sameTeam } from '../utils/public-id.js';
 import { formatDuration, formatLocalDateTime, formatMinutes, formatRelativeTime } from '../utils/time-format.js';
-import { getContestDurationMinutes, getContestTiming, getProblemLetter, sortProblems, summarizeProblemSubmissions } from '../utils/contest-progress.js';
+import { getContestDurationMinutes, getContestTiming, getProblemLetter, getProblemTitle, sortProblems, summarizeProblemSubmissions } from '../utils/contest-progress.js';
 import { extractPublicCases } from '../workspace/contest-public-cases.js';
 
 /*
@@ -473,19 +473,16 @@ function formatSubmissionProblemLabel(problem, problems) {
 }
 
 /**
- * Label a problem as `A. Title`, falling back to the title (or `Problem`)
- * when no letter can be resolved.
+ * Label a problem as `A. Title`, or just the title when no letter can be
+ * resolved. Titles come from the shared `getProblemTitle`.
  * @param {object} problem
  * @param {object[]} problems
  * @returns {string}
  */
 function formatProblemLabel(problem, problems) {
     const letter = getProblemLetter(problem, problems);
-    const title = toText(problem?.title) || toText(problem?.name);
-    if (letter) {
-        return title ? `${letter}. ${title}` : `Problem ${letter}`;
-    }
-    return title || 'Problem';
+    const title = getProblemTitle(problem, letter);
+    return letter ? `${letter}. ${title}` : title;
 }
 
 /**

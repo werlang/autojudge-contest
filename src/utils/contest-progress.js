@@ -96,6 +96,19 @@ export function getProblemLetter(problem, problems) {
 }
 
 /**
+ * Resolve a problem's display title: `title`, else `name`, else `Problem <letter>`
+ * (plain `Problem` when the letter is unknown). The single source for every label.
+ * @param {object | null | undefined} problem
+ * @param {string} [letter] the problem's contest letter, when known
+ * @returns {string}
+ */
+export function getProblemTitle(problem, letter = '') {
+    return problem?.title?.toString().trim()
+        || problem?.name?.toString().trim()
+        || (letter ? `Problem ${letter}` : 'Problem');
+}
+
+/**
  * Summarize the team's own submissions for one problem.
  * @param {object} problem
  * @param {object[] | undefined | null} submissions the team's submissions
