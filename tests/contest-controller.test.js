@@ -889,6 +889,32 @@ describe('contest controller', () => {
             expect(sessionApi.submitSolution).toHaveBeenCalledTimes(2);
         });
 
+        it('releases the submit guard after a failed upload so the next submit proceeds', async () => {
+            resolveConfirmBeforeSubmit.mockReturnValue(false);
+            const snapshot = createSnapshot();
+            sessionApi.submitSolution.mockRejectedValueOnce(new Error('Bad gateway.')).mockResolvedValue(pending(28));
+            const controller = buildLoggedInController(snapshot);
+
+            await expect(controller.submitActiveFile(snapshot.problems[0])).resolves.toBeNull();
+            await controller.submitActiveFile(snapshot.problems[0]);
+
+            expect(sessionApi.submitSolution).toHaveBeenCalledTimes(2);
+            expect(showInformationMessage).not.toHaveBeenCalledWith('A submission is already being sent. Wait for it to finish.');
+        });
+
+        it('releases the submit guard after the confirmation is cancelled so the next submit proceeds', async () => {
+            const snapshot = createSnapshot();
+            showWarningMessage.mockResolvedValueOnce(undefined).mockResolvedValue('Submit');
+            sessionApi.submitSolution.mockResolvedValue(pending());
+            const controller = buildLoggedInController(snapshot);
+
+            await expect(controller.submitActiveFile(snapshot.problems[0])).resolves.toBeNull();
+            await controller.submitActiveFile(snapshot.problems[0]);
+
+            expect(sessionApi.submitSolution).toHaveBeenCalledTimes(1);
+            expect(showInformationMessage).not.toHaveBeenCalledWith('A submission is already being sent. Wait for it to finish.');
+        });
+
         it('allows another submit while the previous verdict is still being polled', async () => {
             resolveConfirmBeforeSubmit.mockReturnValue(false);
             const snapshot = createSnapshot();
@@ -1450,6 +1476,88 @@ describe('contest controller', () => {
             await controller.refreshTree();
 
             expect(sessionApi.restoreContestSession).toHaveBeenCalledTimes(2);
+        });
+
+        it('keeps the new token when an upload from the old session ends with SESSION_ENDED', async () => {
+            resolveConfirmBeforeSubmit.mockReturnValue(false);
+            const old = createSnapshot();
+            const upload = deferred();
+            sessionApi.submitSolution.mockReturnValue(upload.promise);
+            browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+            const fresh = newSessionSnapshot();
+            sessionApi.redeemAndLoadContest.mockResolvedValue(fresh);
+            const controller = buildLoggedInController(old);
+
+            const submit = controller.submitActiveFile(old.problems[0]);
+            await flushPromises(30);
+            await controller.loginTeam();
+            upload.reject(apiError(401, 'SESSION_ENDED', 'ended'));
+            await expect(submit).resolves.toBeNull();
+            await flushPromises();
+
+            expect(sessionApi.clearStoredSession).not.toHaveBeenCalled();
+            expect(showWarningMessage).not.toHaveBeenCalled();
+            expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(fresh);
+        });
+
+        it('does not merge an old-session upload result into the new snapshot', async () => {
+            resolveConfirmBeforeSubmit.mockReturnValue(false);
+            const old = createSnapshot();
+            const upload = deferred();
+            sessionApi.submitSolution.mockReturnValue(upload.promise);
+            browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+            const fresh = newSessionSnapshot();
+            sessionApi.redeemAndLoadContest.mockResolvedValue(fresh);
+            const controller = buildLoggedInController(old);
+
+            const submit = controller.submitActiveFile(old.problems[0]);
+            await flushPromises(30);
+            await controller.loginTeam();
+            upload.resolve({ id: 99, status: 'PENDING' });
+            await expect(submit).resolves.toEqual({ id: 99, status: 'PENDING' });
+
+            expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(fresh);
+            expect(sessionApi.pollSubmissionResults).not.toHaveBeenCalled();
+        });
+
+        it('ignores a restore from the old session that fails after a new login', async () => {
+            const restore = deferred();
+            sessionApi.restoreContestSession.mockReturnValue(restore.promise);
+            browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+            const fresh = newSessionSnapshot();
+            sessionApi.redeemAndLoadContest.mockResolvedValue(fresh);
+            const controller = buildController();
+
+            const refresh = controller.refreshTree();
+            await controller.loginTeam();
+            const contextCalls = setContext.mock.calls.length;
+            restore.reject(new Error('fetch failed'));
+            await expect(refresh).resolves.toBeNull();
+            await flushPromises();
+
+            expect(setContext).toHaveBeenCalledTimes(contextCalls);
+            expect(showErrorMessage).not.toHaveBeenCalled();
+            expect(outputChannel.appendLine).not.toHaveBeenCalledWith(expect.stringContaining('Could not load the contest'));
+            expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(fresh);
+        });
+
+        it('ignores a standings refresh from the old session that fails after a new login', async () => {
+            vi.useFakeTimers();
+            const old = createSnapshot();
+            const refresh = deferred();
+            sessionApi.refreshContestDetails.mockReturnValue(refresh.promise);
+            sessionApi.restoreContestSession.mockResolvedValue(old);
+            browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+            sessionApi.redeemAndLoadContest.mockResolvedValue(newSessionSnapshot());
+            const controller = buildController({ teamsView: createFakeView(true) });
+            await controller.refreshTree({ silent: true });
+
+            await vi.advanceTimersByTimeAsync(15000);
+            await controller.loginTeam();
+            refresh.reject(new Error('fetch failed'));
+            await flushPromises();
+
+            expect(outputChannel.appendLine).not.toHaveBeenCalledWith(expect.stringContaining('Standings refresh failed'));
         });
 
         it('stops old polls on a new login and ignores their verdicts', async () => {
