@@ -174,7 +174,7 @@ export class ContestTreeProvider {
             label: letter ? `${letter}. ${title}` : title,
             description: buildProblemDescription(summary),
             tooltip: buildProblemTooltip(letter, title, summary),
-            collapsibleState: children.length ? 1 : 0,
+            collapsibleState: resolveProblemCollapsibleState(summary, children.length),
             contextValue: TREE_CONTEXT.PROBLEM,
             iconPath: this.createColoredCircleIcon(problem?.color),
             children,
@@ -307,6 +307,28 @@ function buildProblemDescription(summary) {
     }
 
     return parts.join(' · ');
+}
+
+/**
+ * Pick a problem row's initial collapsible state. A problem with a pending
+ * submission starts Expanded so a fresh submission is visible; otherwise it
+ * starts Collapsed when it has submissions and is a leaf when it has none.
+ *
+ * VS Code only applies this state when it first renders a row id (stable
+ * `problem:<id>`); afterwards it keeps the user's own expand/collapse across
+ * refreshes. So the reveal applies on load and when an untouched problem gets
+ * its first submission, a problem the user collapsed stays collapsed, and the
+ * row does not snap shut when the verdict arrives.
+ * @param {ReturnType<typeof summarizeProblemSubmissions>} summary
+ * @param {number} childCount
+ * @returns {0 | 1 | 2} None, Collapsed, or Expanded
+ */
+function resolveProblemCollapsibleState(summary, childCount) {
+    if (!childCount) {
+        return 0;
+    }
+
+    return summary.pending ? 2 : 1;
 }
 
 /**

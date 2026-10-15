@@ -209,7 +209,7 @@ describe('contest tree provider', () => {
             '',
             '✓ Solved',
         ]);
-        expect(problems.map(item => item.collapsibleState)).toEqual([1, 1, 1, 0, 1]);
+        expect(problems.map(item => item.collapsibleState)).toEqual([1, 1, 2, 0, 1]);
         expect(problems.map(item => item.id)).toEqual([
             'problem:pa',
             'problem:pb',
@@ -240,6 +240,22 @@ describe('contest tree provider', () => {
         }).getChildren();
 
         expect(problem.description).toBe('✓ Solved · Judging… · 2 attempts');
+        expect(problem.collapsibleState).toBe(2);
+    });
+
+    it('expands a problem whose first submission is still judging and collapses it once judged', () => {
+        const pending = createProvider({
+            problems: [{ publicId: 'pa', order: 1, title: 'A + B' }],
+            submissions: [buildSubmission(1, 'PENDING', 'pa', 47)],
+        }).getChildren()[1];
+        const judged = createProvider({
+            problems: [{ publicId: 'pa', order: 1, title: 'A + B' }],
+            submissions: [buildSubmission(1, 'WRONG_ANSWER', 'pa', 47)],
+        }).getChildren()[1];
+
+        expect([pending.collapsibleState, judged.collapsibleState]).toEqual([2, 1]);
+        // Same id either way, so VS Code keeps the user's own expand state.
+        expect(pending.id).toBe(judged.id);
     });
 
     it('labels a problem the same way in the explorer and on its page', () => {
