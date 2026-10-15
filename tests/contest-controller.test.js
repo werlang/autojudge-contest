@@ -1986,6 +1986,28 @@ describe('contest controller', () => {
             expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(started);
         });
 
+        it('logs the loaded line once per not-started period, not on every retry', async () => {
+            vi.useFakeTimers();
+            const waiting = createWaitingSnapshot();
+            const started = { ...createSnapshot(), contestNotStarted: false };
+            sessionApi.restoreContestSession.mockResolvedValue(waiting);
+            sessionApi.refreshContestDetails.mockImplementation(async ({ contest }) => contest);
+            const controller = buildController({ teamsView: createFakeView(true) });
+            await controller.refreshTree({ silent: true });
+
+            // Startup restore, then retries at 15 s, 75 s and 135 s.
+            for (let index = 0; index < 9; index += 1) {
+                await tick();
+            }
+            const loadedLines = () => outputChannel.appendLine.mock.calls.filter(([line]) => line.startsWith('Loaded '));
+            expect(sessionApi.restoreContestSession.mock.calls.length).toBeGreaterThanOrEqual(3);
+            expect(loadedLines()).toHaveLength(1);
+
+            sessionApi.restoreContestSession.mockResolvedValue(started);
+            await controller.refreshTree();
+            expect(loadedLines()).toHaveLength(2);
+        });
+
         it('starts one contest-start reload even when standings ticks overlap it', async () => {
             vi.useFakeTimers();
             const startTime = '2026-05-28T03:59:00.000Z';

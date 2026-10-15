@@ -939,15 +939,18 @@ export function createContestController({
             }
 
             sessionEndedPromptShown = false;
-            log('info', `Loaded ${toText(snapshot.contest?.name) || 'the contest'} for ${toText(snapshot.team?.name) || 'your team'}.`);
+            const loadedMessage = `Loaded ${toText(snapshot.contest?.name) || 'the contest'} for ${toText(snapshot.team?.name) || 'your team'}.`;
             if (!snapshot.contestNotStarted) {
+                log('info', loadedMessage);
                 notStartedLogged = false;
                 contestStartRetryAt = 0;
             }
             else if (!notStartedLogged) {
                 // The session is kept; the tree shows the contest as not started
-                // until a reload finds problems. Logged once per not-started period.
+                // until a reload finds problems. Both lines are logged once per
+                // not-started period, so the 60 s retries stay silent.
                 notStartedLogged = true;
+                log('info', loadedMessage);
                 log('info', CONTEST_NOT_STARTED_MESSAGE);
             }
 
