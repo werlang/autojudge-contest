@@ -1,6 +1,38 @@
-.vscode/**
+# Version control, editor, and agent context
 .git/**
 .github/**
-node_modules/**
+.vscode/**
+.vscode-test/**
+.agents/**
+.claude/**
+AGENTS.md
+CLAUDE.md
+TODO.md
+**/.DS_Store
+.gitignore
+
+# Development environment and tooling
 Dockerfile
 compose.yaml
+build.sh
+jsconfig.json
+package-lock.json
+vitest.config.*
+node_modules/**
+
+# Tests, coverage, samples, and build output
+tests/**
+coverage/**
+samples/**
+dist/**
+*.vsix
+
+# Media: ship only the icons and the images the README references
+media/**
+!media/icon.png
+!media/icon.svg
+!media/demo.gif
+!media/explorer.png
+!media/problem.png
+!media/verdict.png
+!media/submit.png
