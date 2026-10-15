@@ -142,6 +142,10 @@ export function createContestController({
     let standingsTimer = null;
     let explorerTimer = null;
     let sessionEndedPromptShown = false;
+    // Bumped whenever the session changes (login, logout, session end). Every
+    // async path captures it at its start and drops its result when it moved,
+    // so a reply for an old session never touches the new one or its token.
+    let sessionGeneration = 0;
     // Token of the submit currently between its start and the judge POST
     // response; a second submit is refused meanwhile so it never double-posts.
     let sendingSubmit = null;
@@ -200,11 +204,12 @@ export function createContestController({
      * session that ended on the server is handled globally, and an invalid
      * setting offers an `Open Settings` action.
      * @param {Error & { statusCode?: number, code?: string, setting?: string }} error
+     * @param {number} [generation] session generation the failed work started in
      * @returns {Promise<null>}
      */
-    const handleFailure = async (error) => {
+    const handleFailure = async (error, generation = sessionGeneration) => {
         if (isSessionEnded(error)) {
-            return handleSessionEnded();
+            return handleSessionEnded(generation);
         }
 
         log('error', error.message);
@@ -232,9 +237,17 @@ export function createContestController({
      * Forget the dead session token, return the sidebar to the logged-out state,
      * and offer a "Log In" action. Several requests can notice the same ended
      * session at once, so the prompt is only shown once until the next login.
+     * An error from an older session (the user logged in again meanwhile) is
+     * ignored, so it never deletes the new token.
+     * @param {number} [generation] session generation the failed request started in
      * @returns {Promise<null>}
      */
-    const handleSessionEnded = async () => {
+    const handleSessionEnded = async (generation = sessionGeneration) => {
+        if (generation !== sessionGeneration) {
+            return null;
+        }
+
+        startNewSession();
         await sessionApi.clearStoredSession(context);
         await syncTreeState(null);
 
@@ -449,6 +462,7 @@ export function createContestController({
         }
 
         teamsRefreshInFlight = true;
+        const generation = sessionGeneration;
 
         try {
             const refreshedContest = await sessionApi.refreshContestDetails({
@@ -456,6 +470,10 @@ export function createContestController({
                 contest: currentSnapshot.contest,
                 context,
             });
+
+            if (generation !== sessionGeneration) {
+                return;
+            }
 
             teamsRefreshErrorMessage = null;
 
@@ -477,8 +495,12 @@ export function createContestController({
             syncStatusBar();
         }
         catch (error) {
+            if (generation !== sessionGeneration) {
+                return;
+            }
+
             if (isSessionEnded(error)) {
-                await handleSessionEnded();
+                await handleSessionEnded(generation);
                 return;
             }
 
@@ -548,6 +570,15 @@ export function createContestController({
         pollAbort.abort();
         pollAbort = new AbortController();
         activePolls.clear();
+    };
+
+    /**
+     * Start a new session generation (login, logout, session end): results of
+     * older async work are dropped from now on and every verdict poll stops.
+     */
+    const startNewSession = () => {
+        sessionGeneration += 1;
+        stopAllPolling();
     };
 
     /**
@@ -634,7 +665,7 @@ export function createContestController({
         }
 
         const { signal } = pollAbort;
-        const poll = pollUntilFinal(submission, problem, signal, userInitiated)
+        const poll = pollUntilFinal(submission, problem, signal, userInitiated, sessionGeneration)
             .finally(() => {
                 if (activePolls.get(key) === poll) {
                     activePolls.delete(key);
@@ -651,9 +682,10 @@ export function createContestController({
      * @param {object} problem
      * @param {AbortSignal} signal
      * @param {boolean} userInitiated show an error toast when polling fails
+     * @param {number} generation session generation the poll belongs to
      * @returns {Promise<object>}
      */
-    const pollUntilFinal = async (submission, problem, signal, userInitiated) => {
+    const pollUntilFinal = async (submission, problem, signal, userInitiated, generation) => {
         try {
             const finalSubmission = await sessionApi.pollSubmissionResult({
                 baseUrl: resolveBaseUrl(),
@@ -664,7 +696,7 @@ export function createContestController({
                 timeoutMs: SUBMISSION_POLL_TIMEOUT_MS,
             });
 
-            if (signal.aborted) {
+            if (signal.aborted || generation !== sessionGeneration) {
                 return submission;
             }
 
@@ -678,12 +710,12 @@ export function createContestController({
             return finalSubmission;
         }
         catch (error) {
-            if (signal.aborted) {
+            if (signal.aborted || generation !== sessionGeneration) {
                 return submission;
             }
 
             if (isSessionEnded(error)) {
-                await handleSessionEnded();
+                await handleSessionEnded(generation);
                 return submission;
             }
 
@@ -715,11 +747,18 @@ export function createContestController({
      * @returns {Promise<object | null>}
      */
     const restoreSession = async (silent) => {
+        const generation = sessionGeneration;
+
         try {
             const snapshot = await sessionApi.restoreContestSession({
                 baseUrl: resolveBaseUrl(),
                 context,
             });
+            // Logged in or out meanwhile: this snapshot belongs to an old session.
+            if (generation !== sessionGeneration) {
+                return null;
+            }
+
             if (!snapshot) {
                 return await syncTreeState(null, VIEW_STATES.LOGGED_OUT);
             }
@@ -736,12 +775,20 @@ export function createContestController({
             return snapshot;
         }
         catch (error) {
+            if (generation !== sessionGeneration) {
+                return null;
+            }
+
             if (isSessionEnded(error)) {
-                return handleSessionEnded();
+                return handleSessionEnded(generation);
             }
 
             if (!currentSnapshot) {
                 const tokenStored = await hasStoredToken();
+                if (generation !== sessionGeneration) {
+                    return null;
+                }
+
                 await syncTreeState(null, tokenStored ? VIEW_STATES.OFFLINE : VIEW_STATES.LOGGED_OUT);
             }
 
@@ -801,7 +848,7 @@ export function createContestController({
          */
         dispose() {
             clearTimers();
-            stopAllPolling();
+            startNewSession();
             for (const subscription of viewSubscriptions.splice(0)) {
                 subscription?.dispose?.();
             }
@@ -817,6 +864,7 @@ export function createContestController({
         async loginTeam() {
             // A new login starts a new session, so a later session end may prompt again.
             sessionEndedPromptShown = false;
+            let redeeming = false;
 
             try {
                 // Check the API setting before the browser round-trip so an
@@ -826,11 +874,16 @@ export function createContestController({
                     WAITING_FOR_BROWSER_MESSAGE,
                     (cancellation) => browserLogin.waitForHandoffCode(cancellation),
                 );
+                // Redeeming replaces the stored token: from here on, results of
+                // the old session (restore, refresh, polls) are dropped.
+                startNewSession();
+                redeeming = true;
                 const snapshot = await sessionApi.redeemAndLoadContest({
                     baseUrl,
                     code,
                     context,
                 });
+                redeeming = false;
                 sessionEndedPromptShown = false;
                 log('info', `Logged in as ${toText(snapshot.team?.name) || 'your team'} for ${toText(snapshot.contest?.name) || 'the contest'}.`);
                 await syncTreeState(snapshot);
@@ -838,6 +891,11 @@ export function createContestController({
                 return snapshot;
             }
             catch (error) {
+                // A failed redeem keeps the shown snapshot; resume its verdict polls.
+                if (redeeming && currentSnapshot && !isSessionEnded(error)) {
+                    pollPendingSubmissions();
+                }
+
                 if (error instanceof BrowserLoginError && (error.reason === LOGIN_FAILURE.CANCELLED || error.reason === LOGIN_FAILURE.SUPERSEDED)) {
                     log('info', 'Login cancelled.');
                     return null;
@@ -858,6 +916,7 @@ export function createContestController({
          * @returns {Promise<null>}
          */
         async logoutTeam() {
+            startNewSession();
             await sessionApi.clearStoredSession(context);
             log('info', 'Logged out of AutoJudge Contest.');
             await syncTreeState(null);
@@ -1036,6 +1095,7 @@ export function createContestController({
                 return null;
             }
 
+            const generation = sessionGeneration;
             const submitToken = {};
             sendingSubmit = submitToken;
             const releaseSubmit = () => {
@@ -1081,6 +1141,11 @@ export function createContestController({
                 releaseSubmit();
 
                 await rememberProblemForFile(source.uri?.fsPath, problem);
+                if (generation !== sessionGeneration) {
+                    // Logged out or in again meanwhile: leave the new session's view alone.
+                    return submission;
+                }
+
                 await mergeSubmissionIntoSnapshot(problem, submission);
                 log('info', `Submitted ${source.filename} to ${problemLabel(problem)} (#${submission.id}).`);
 
@@ -1092,7 +1157,7 @@ export function createContestController({
                 return await trackSubmission(submission, { problem, userInitiated: true });
             }
             catch (error) {
-                return handleFailure(error);
+                return handleFailure(error, generation);
             }
             finally {
                 releaseSubmit();

@@ -1112,6 +1112,143 @@ describe('contest controller', () => {
         });
     });
 
+    describe('stale results across sessions', () => {
+        /**
+         * Build a promise whose settlement the test controls.
+         * @returns {{ promise: Promise<unknown>, resolve: Function, reject: Function }}
+         */
+        function deferred() {
+            let resolve;
+            let reject;
+            const promise = new Promise((res, rej) => {
+                resolve = res;
+                reject = rej;
+            });
+            return { promise, resolve, reject };
+        }
+
+        /**
+         * A snapshot for the session created by a new login.
+         * @returns {object}
+         */
+        function newSessionSnapshot() {
+            return { ...createSnapshot(), token: 'new-token', submissions: [] };
+        }
+
+        it('ignores an ended-session error from a restore that started before a new login', async () => {
+            const restore = deferred();
+            sessionApi.restoreContestSession.mockReturnValue(restore.promise);
+            const fresh = newSessionSnapshot();
+            browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+            sessionApi.redeemAndLoadContest.mockResolvedValue(fresh);
+            const controller = buildController();
+
+            const startup = controller.refreshTree({ silent: true });
+            await controller.loginTeam();
+            restore.reject(apiError(401, 'SESSION_ENDED', 'ended'));
+            await startup;
+            await flushPromises();
+
+            expect(sessionApi.clearStoredSession).not.toHaveBeenCalled();
+            expect(showWarningMessage).not.toHaveBeenCalled();
+            expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(fresh);
+            expect(setContext).toHaveBeenLastCalledWith('autojudgeContest.state', 'loggedIn');
+        });
+
+        it('ignores a restore that resolves after logout', async () => {
+            const restore = deferred();
+            sessionApi.restoreContestSession.mockReturnValue(restore.promise);
+            const controller = buildController();
+
+            const refresh = controller.refreshTree();
+            await controller.logoutTeam();
+            restore.resolve(createSnapshot());
+            await expect(refresh).resolves.toBeNull();
+
+            expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(null);
+            expect(setContext).toHaveBeenLastCalledWith('autojudgeContest.state', 'loggedOut');
+        });
+
+        it('drops a standings refresh that started before logout and a new login', async () => {
+            vi.useFakeTimers();
+            const old = createSnapshot();
+            const refresh = deferred();
+            sessionApi.refreshContestDetails.mockReturnValue(refresh.promise);
+            const fresh = newSessionSnapshot();
+            browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+            sessionApi.redeemAndLoadContest.mockResolvedValue(fresh);
+            sessionApi.restoreContestSession.mockResolvedValue(old);
+            const controller = buildController({ teamsView: createFakeView(true) });
+            await controller.refreshTree({ silent: true });
+
+            await vi.advanceTimersByTimeAsync(15000);
+            expect(sessionApi.refreshContestDetails).toHaveBeenCalledTimes(1);
+            await controller.logoutTeam();
+            await controller.loginTeam();
+            refresh.resolve({ ...old.contest, name: 'Old session contest' });
+            await flushPromises();
+
+            expect(teamsStandingsProvider.setSnapshot).toHaveBeenLastCalledWith(fresh);
+            expect(statusBar.update).toHaveBeenLastCalledWith(fresh);
+        });
+
+        it('stops old polls on a new login and ignores their verdicts', async () => {
+            const old = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
+            const poll = deferred();
+            sessionApi.restoreContestSession.mockResolvedValue(old);
+            sessionApi.pollSubmissionResult.mockReturnValue(poll.promise);
+            const fresh = newSessionSnapshot();
+            browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+            sessionApi.redeemAndLoadContest.mockResolvedValue(fresh);
+            const controller = buildController();
+
+            await controller.refreshTree({ silent: true });
+            const { signal } = sessionApi.pollSubmissionResult.mock.calls[0][0];
+            await controller.loginTeam();
+
+            expect(signal.aborted).toBe(true);
+            poll.resolve({ id: 1, status: 'ACCEPTED', problem: { publicId: 'pa1b2c3d4e5f6' } });
+            await flushPromises();
+
+            expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(fresh);
+            expect(showInformationMessage).not.toHaveBeenCalled();
+            expect(showWarningMessage).not.toHaveBeenCalled();
+        });
+
+        it('resumes the shown session polls when redeeming the new login fails', async () => {
+            const old = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
+            sessionApi.restoreContestSession.mockResolvedValue(old);
+            sessionApi.pollSubmissionResult.mockReturnValue(new Promise(() => {}));
+            browserLogin.waitForHandoffCode.mockResolvedValue('used-code');
+            sessionApi.redeemAndLoadContest.mockRejectedValue(apiError(400, 'HANDOFF_INVALID', 'expired'));
+            const controller = buildController();
+
+            await controller.refreshTree({ silent: true });
+            await controller.loginTeam();
+
+            expect(sessionApi.pollSubmissionResult).toHaveBeenCalledTimes(2);
+            expect(sessionApi.pollSubmissionResult.mock.calls[1][0].signal.aborted).toBe(false);
+            expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(old);
+        });
+
+        it('ignores an ended-session error from an old poll that ignores the abort', async () => {
+            const old = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
+            const poll = deferred();
+            sessionApi.restoreContestSession.mockResolvedValue(old);
+            sessionApi.pollSubmissionResult.mockReturnValue(poll.promise);
+            browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+            sessionApi.redeemAndLoadContest.mockResolvedValue(newSessionSnapshot());
+            const controller = buildController();
+
+            await controller.refreshTree({ silent: true });
+            await controller.loginTeam();
+            poll.reject(apiError(401, 'SESSION_ENDED', 'ended'));
+            await flushPromises();
+
+            expect(sessionApi.clearStoredSession).not.toHaveBeenCalled();
+        });
+    });
+
     describe('compare output', () => {
         it('writes expected and received output and opens a diff', async () => {
             const submission = { id: 852, status: 'WRONG_ANSWER', hint: { expected: '3\n', received: '4\n' } };
