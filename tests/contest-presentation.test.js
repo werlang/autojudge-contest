@@ -54,6 +54,15 @@ describe('renderProblemPage', () => {
         expect(page).not.toMatch(EMOJI);
     });
 
+    it('preserves runs of spaces and tabs in public test case cells', () => {
+        const problem = { publicId: 'pwhitespace0', title: 'Ws', input: ['a  b   c\td \n\t x'], output: ['1 2'] };
+        const page = renderProblemPage(problem, { problems: [problem] });
+
+        expect(page).toContain('<code>a &nbsp;b &nbsp;&nbsp;c &nbsp;&nbsp;&nbsp;d&nbsp;<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;x</code>');
+        // Single spaces between words stay plain.
+        expect(page).toContain('<code>1 2</code>');
+    });
+
     it('summarizes the team progress on the problem', () => {
         const problem = PROBLEMS[1];
         const rejected = { problem, status: 'WRONG_ANSWER', submittedAt: '2026-05-28T03:05:00.000Z' };

@@ -523,7 +523,9 @@ function buildPublicCasesTable(problem) {
 /**
  * Keep multiline text readable inside a Markdown table cell: encode HTML,
  * pipe, and Markdown emphasis characters as entities (so `a*b*c` stays
- * literal), keep leading spaces, and join lines with `<br>`.
+ * literal), preserve whitespace that HTML would collapse (tabs become four
+ * spaces, leading and trailing spaces and extra spaces in a run become
+ * `&nbsp;`), and join lines with `<br>`.
  * @param {unknown} value
  * @returns {string}
  */
@@ -534,7 +536,12 @@ function formatTableCell(value) {
         .split('\n')
         .map(line => line
             .replace(/[&<>|*_`[\]\\~]/g, char => `&#${char.charCodeAt(0)};`)
-            .replace(/^ +/, spaces => '&nbsp;'.repeat(spaces.length)));
+            .replace(/\t/g, '    ')
+            .replace(/^ +| +$| {2,}/g, (spaces, offset, text) => {
+                const internal = offset > 0 && offset + spaces.length < text.length;
+                // An internal run keeps one breakable space; the rest cannot collapse.
+                return internal ? ` ${'&nbsp;'.repeat(spaces.length - 1)}` : '&nbsp;'.repeat(spaces.length);
+            }));
 
     return `<code>${lines.join('<br>')}</code>`;
 }
