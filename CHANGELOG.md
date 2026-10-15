@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Standings ranked the slowest team first. Teams are now ranked by solved problems, then by lowest total time, and tied teams share a rank.
 - An invalid `autojudgeContest.baseUrl` prevented the extension from activating. Activation now succeeds; the error appears when the server is needed, with an **Open Settings** action.
 - Log In checks `autojudgeContest.baseUrl` before the browser opens, so an invalid value is reported without a browser round-trip.
-- A server that does not answer within 20 seconds counts as unreachable, so the views show **Offline** with **Retry** instead of loading forever.
+- A server that does not answer within 20 seconds counts as unreachable, so the views show **Offline** with **Retry** instead of loading forever. Solution uploads get 60 seconds and, on timeout, ask you to check Contest Explorer before submitting again.
 - `PARSING_ERROR` verdicts show as error verdicts.
 - Names from the server are escaped in generated pages, and Windows reserved file names (such as `CON` or `NUL`) get a `_` suffix so their page files can be written.
 
