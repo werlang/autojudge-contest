@@ -1581,6 +1581,98 @@ describe('contest controller', () => {
             expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(snapshotB);
         });
 
+        it('tells each redeem whether its login is still the latest one', async () => {
+            const redeemA = deferred();
+            const redeemB = deferred();
+            browserLogin.waitForHandoffCode.mockResolvedValueOnce('code-a').mockResolvedValueOnce('code-b');
+            sessionApi.redeemAndLoadContest.mockReturnValueOnce(redeemA.promise).mockReturnValueOnce(redeemB.promise);
+            const controller = buildController();
+
+            const loginA = controller.loginTeam();
+            await flushPromises();
+            const isCurrentA = sessionApi.redeemAndLoadContest.mock.calls[0][0].isCurrent;
+            expect(isCurrentA()).toBe(true);
+
+            const loginB = controller.loginTeam();
+            await flushPromises();
+            const isCurrentB = sessionApi.redeemAndLoadContest.mock.calls[1][0].isCurrent;
+
+            expect(isCurrentA()).toBe(false);
+            expect(isCurrentB()).toBe(true);
+
+            redeemA.resolve(newSessionSnapshot());
+            redeemB.resolve(newSessionSnapshot());
+            await Promise.all([loginA, loginB]);
+        });
+
+        it('does not resume the shown polls when a failed login overlaps one that still redeems', async () => {
+            const old = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
+            const redeemA = deferred();
+            const redeemB = deferred();
+            sessionApi.restoreContestSession.mockResolvedValue(old);
+            browserLogin.waitForHandoffCode.mockResolvedValueOnce('code-a').mockResolvedValueOnce('code-b');
+            sessionApi.redeemAndLoadContest.mockReturnValueOnce(redeemA.promise).mockReturnValueOnce(redeemB.promise);
+            const controller = buildController();
+            await controller.refreshTree({ silent: true });
+            expect(sessionApi.pollSubmissionResults).toHaveBeenCalledTimes(1);
+
+            const loginA = controller.loginTeam();
+            await flushPromises();
+            const loginB = controller.loginTeam();
+            await flushPromises();
+            redeemA.reject(new Error('fetch failed'));
+            await loginA;
+
+            // B still redeems and decides what to poll, so A must not restart polls.
+            expect(sessionApi.pollSubmissionResults).toHaveBeenCalledTimes(1);
+
+            redeemB.resolve(newSessionSnapshot());
+            await loginB;
+        });
+
+        it('logs the not-started lines again for the session after a logout and login', async () => {
+            const waiting = { ...createSnapshot(), problems: [], contestNotStarted: true };
+            sessionApi.restoreContestSession.mockResolvedValue(waiting);
+            browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+            sessionApi.redeemAndLoadContest.mockResolvedValue(newSessionSnapshot());
+            const controller = buildController();
+            const countNotStarted = () => outputChannel.appendLine.mock.calls
+                .filter(([line]) => line.startsWith('The contest has not started yet.')).length;
+
+            await controller.refreshTree({ silent: true });
+            await controller.refreshTree({ silent: true });
+            expect(countNotStarted()).toBe(1);
+
+            await controller.logoutTeam();
+            await controller.loginTeam();
+            await controller.refreshTree({ silent: true });
+
+            expect(countNotStarted()).toBe(2);
+        });
+
+        it('logs a submission as still being judged again for the session after a logout and login', async () => {
+            vi.useFakeTimers();
+            const pending = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
+            sessionApi.restoreContestSession.mockResolvedValue(pending);
+            sessionApi.refreshContestDetails.mockResolvedValue(pending.contest);
+            browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+            sessionApi.redeemAndLoadContest.mockResolvedValue(pending);
+            pollTimesOut();
+            const controller = buildController();
+            const countStuck = () => outputChannel.appendLine.mock.calls
+                .filter(([line]) => line.includes('Submission #1 is still being judged')).length;
+
+            await controller.refreshTree({ silent: true });
+            await vi.advanceTimersByTimeAsync(0);
+            expect(countStuck()).toBe(1);
+
+            await controller.logoutTeam();
+            await controller.loginTeam();
+            await vi.advanceTimersByTimeAsync(0);
+
+            expect(countStuck()).toBe(2);
+        });
+
         it('keeps the new token when an upload from the old session ends with SESSION_ENDED', async () => {
             resolveConfirmBeforeSubmit.mockReturnValue(false);
             const old = createSnapshot();
