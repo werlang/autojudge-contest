@@ -1,6 +1,6 @@
 import { isPassedSubmission, isPendingSubmission } from '../utils/submission-status.js';
-import { countSolvedProblems, normalizeStandingScore, resolveStandingTeams } from '../utils/standings.js';
-import { resolveRouteId, sameEntity, sameTeam } from '../utils/public-id.js';
+import { countSolvedProblems, findTeamStanding, normalizeStandingScore, resolveStandingTeams } from '../utils/standings.js';
+import { resolveRouteId, sameEntity } from '../utils/public-id.js';
 import { formatDuration, formatLocalDateTime, formatMinutes, formatRelativeTime } from '../utils/time-format.js';
 import { getContestDurationMinutes, getContestTiming, getProblemLetter, getProblemTitle, sortProblems, summarizeProblemSubmissions } from '../utils/contest-progress.js';
 import { extractPublicCases } from '../workspace/contest-public-cases.js';
@@ -166,14 +166,14 @@ export function renderSubmissionDetails(submission, { problems = [] } = {}) {
 export function renderTeamStandingDetails(team, snapshot) {
     const contest = snapshot?.contest;
     const standings = contest ? resolveStandingTeams(contest) : [];
-    const index = standings.findIndex(entry => sameTeam(entry, team));
-    const standing = index === -1 ? team : standings[index];
-    const rank = index === -1 ? null : standing.rank ?? index + 1;
+    const ranked = findTeamStanding(contest, team, standings);
+    const standing = ranked ?? team;
+    const rank = ranked?.rank ?? null;
 
     const problems = sortProblems(contest?.problems ?? snapshot?.problems);
     const solvedIds = Array.isArray(standing?.solvedProblemIds) ? standing.solvedProblemIds : [];
     const solvedProblems = problems.filter(problem => solvedIds.includes(resolveRouteId(problem)));
-    const solvedCount = solvedProblems.length || countSolvedProblems(standing);
+    const solvedCount = countSolvedProblems(standing);
     const totalTime = formatMinutes(normalizeStandingScore(standing));
     const name = getTeamPageName(team);
 
@@ -258,11 +258,10 @@ export function renderContestDashboard(contest, { team, problems } = {}, now = D
     ];
 
     if (team) {
-        const index = standings.findIndex(entry => sameTeam(entry, team));
-        const standing = standings[index];
+        const standing = findTeamStanding(contest, team, standings);
         lines.push('', `## ${getTeamPageName(team)}`, '');
         lines.push(...renderFields([
-            ['Rank', standing ? `#${standing.rank ?? index + 1} of ${standings.length}` : '—'],
+            ['Rank', standing ? `#${standing.rank} of ${standings.length}` : '—'],
             ['Solved', standing ? `${countSolvedProblems(standing)} of ${problemCount}` : '—'],
             ['Total time', standing ? formatMinutes(normalizeStandingScore(standing)) : ''],
         ]));

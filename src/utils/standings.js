@@ -1,4 +1,4 @@
-import { resolveRouteId } from './public-id.js';
+import { resolveRouteId, sameTeam } from './public-id.js';
 
 /**
  * Normalize, rank, and enrich contest standings teams for shared controller and
@@ -23,6 +23,18 @@ export function resolveStandingTeams(contest) {
         team.rank = tiedWithPrevious ? previous.rank : index + 1;
         return team;
     });
+}
+
+/**
+ * Find a team's ranked standings entry (it always carries `rank`), or null when
+ * the team is not in the contest standings.
+ * @param {object | undefined | null} contest
+ * @param {object | undefined | null} team
+ * @param {Array<object>} [standings] already-resolved standings, to avoid ranking twice
+ * @returns {object | null}
+ */
+export function findTeamStanding(contest, team, standings = resolveStandingTeams(contest)) {
+    return standings.find(entry => sameTeam(entry, team)) ?? null;
 }
 
 /**

@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import { COMMANDS } from '../constants.js';
-import { sameTeam } from '../utils/public-id.js';
-import { countSolvedProblems, resolveStandingTeams } from '../utils/standings.js';
+import { countSolvedProblems, findTeamStanding, resolveStandingTeams } from '../utils/standings.js';
 import { getContestTiming, summarizeProblemSubmissions } from '../utils/contest-progress.js';
 import { formatLocalDateTime } from '../utils/time-format.js';
 import { describeContestTiming } from './contest-tree-provider.js';
@@ -78,7 +77,8 @@ export class ContestStatusBar {
         const timingText = describeContestTiming(timing, Boolean(snapshot.contestNotStarted), now);
         // The server's not-started flag is sticky, so the clock decides once it has a start time.
         const awaitingStart = Boolean(snapshot.contestNotStarted) && timing.phase === 'notStarted';
-        const standing = awaitingStart ? null : findTeamStanding(contest, snapshot.team);
+        const standings = awaitingStart ? [] : resolveStandingTeams(contest);
+        const standing = findTeamStanding(contest, snapshot.team, standings);
         const segments = [timingText ? `$(mortar-board) ${timingText}` : '$(mortar-board)'];
 
         if (standing) {
@@ -93,7 +93,7 @@ export class ContestStatusBar {
         const nearEnd = running && timing.remainingMs != null && timing.remainingMs < WARNING_REMAINING_MS;
 
         this.item.text = segments.join(' · ');
-        this.item.tooltip = buildTooltip(snapshot, contest, timing, timingText, standing, awaitingStart);
+        this.item.tooltip = buildTooltip(snapshot, contest, timing, timingText, standing, standings.length, awaitingStart);
         this.item.backgroundColor = nearEnd ? new vscode.ThemeColor('statusBarItem.warningBackground') : undefined;
         this.item.command = {
             command: COMMANDS.OPEN_CONTEST_DASHBOARD,
@@ -138,37 +138,23 @@ export class ContestStatusBar {
 }
 
 /**
- * Find the logged-in team's ranked standings entry, with `rank` falling back to
- * the 1-based position when the standings helper did not set one.
- * @param {object | null} contest
- * @param {object | undefined} team
- * @returns {object | null}
- */
-function findTeamStanding(contest, team) {
-    const teams = resolveStandingTeams(contest);
-    const index = teams.findIndex(entry => sameTeam(entry, team));
-    if (index === -1) {
-        return null;
-    }
-
-    const entry = teams[index];
-    return { ...entry, rank: entry.rank ?? index + 1, total: teams.length };
-}
-
-/**
- * Count the team's solved problems, taking the larger of its own accepted
- * submissions (fresh after a submit) and its standings entry.
+ * Count the team's solved problems from its standings entry, the same source
+ * the pages and standings rows use. Only when the team has no standings entry
+ * (standings not loaded yet, or hidden) does it fall back to counting the
+ * team's own accepted submissions.
  * @param {object} snapshot
  * @param {object | null} standing
  * @returns {number}
  */
 function countSolved(snapshot, standing) {
+    if (standing) {
+        return countSolvedProblems(standing);
+    }
+
     const problems = Array.isArray(snapshot.problems) ? snapshot.problems : [];
-    const fromSubmissions = problems
+    return problems
         .filter(problem => summarizeProblemSubmissions(problem, snapshot.submissions).solved)
         .length;
-
-    return Math.max(fromSubmissions, standing ? countSolvedProblems(standing) : 0);
 }
 
 /**
@@ -178,10 +164,11 @@ function countSolved(snapshot, standing) {
  * @param {ReturnType<typeof getContestTiming>} timing
  * @param {string} timingText
  * @param {object | null} standing
+ * @param {number} teamCount number of ranked teams
  * @param {boolean} awaitingStart the contest has not started, so there is nothing solved yet
  * @returns {string}
  */
-function buildTooltip(snapshot, contest, timing, timingText, standing, awaitingStart) {
+function buildTooltip(snapshot, contest, timing, timingText, standing, teamCount, awaitingStart) {
     const lines = [contest?.name?.toString().trim() || 'Contest'];
     const teamName = snapshot.team?.name?.toString().trim();
 
@@ -194,7 +181,7 @@ function buildTooltip(snapshot, contest, timing, timingText, standing, awaitingS
     }
 
     if (standing) {
-        lines.push(`Rank: #${standing.rank} of ${standing.total}`);
+        lines.push(`Rank: #${standing.rank} of ${teamCount}`);
     }
 
     if (!awaitingStart) {

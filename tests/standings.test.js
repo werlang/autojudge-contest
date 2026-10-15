@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveStandingTeams } from '../src/utils/standings.js';
+import { findTeamStanding, resolveStandingTeams } from '../src/utils/standings.js';
 
 describe('resolveStandingTeams', () => {
     it('orders by solved count desc, then total time asc, then name', () => {
@@ -35,5 +35,26 @@ describe('resolveStandingTeams', () => {
 
         expect(team).toMatchObject({ publicId: 'x', name: 'Bits', score: 5, rank: 1 });
         expect(resolveStandingTeams(null)).toEqual([]);
+    });
+});
+
+describe('findTeamStanding', () => {
+    const contest = {
+        teams: [
+            { publicId: 'ta', name: 'Alpha', score: 100, solvedProblemIds: ['p1'] },
+            { publicId: 'tb', name: 'Beta', score: 50, solvedProblemIds: ['p1', 'p2'] },
+        ],
+    };
+
+    it('returns the ranked entry for the team, matched by public id', () => {
+        expect(findTeamStanding(contest, { publicId: 'ta', name: 'Renamed' })).toMatchObject({ name: 'Alpha', rank: 2 });
+        expect(findTeamStanding(contest, { publicId: 'tb' })).toMatchObject({ name: 'Beta', rank: 1 });
+    });
+
+    it('returns null for a team outside the standings or without standings', () => {
+        expect(findTeamStanding(contest, { publicId: 'tghost' })).toBeNull();
+        expect(findTeamStanding(contest, null)).toBeNull();
+        expect(findTeamStanding(null, { publicId: 'ta' })).toBeNull();
+        expect(findTeamStanding(contest, { publicId: 'ta' }, [])).toBeNull();
     });
 });

@@ -122,6 +122,20 @@ describe('contest status bar', () => {
         expect(item.tooltip).not.toContain('Rank:');
     });
 
+    it('counts solved problems from the standings entry, falling back to own submissions without one', () => {
+        const accepted = (id, problem) => ({ id, status: 'ACCEPTED', problem: { publicId: problem }, submittedAt: new Date(START).toISOString() });
+        const twoAccepted = [accepted(1, 'pa'), accepted(2, 'pb')];
+
+        // Standings say 1 solved (pa); the extra local acceptance is not trusted over them.
+        const ranked = createBar(START + 48 * MINUTE);
+        ranked.bar.update(buildSnapshot({ submissions: twoAccepted }));
+        expect(ranked.item.tooltip).toContain('Solved: 1');
+
+        const unranked = createBar(START + 48 * MINUTE);
+        unranked.bar.update(buildSnapshot({ team: { publicId: 'tmissing', name: 'Ghost' }, submissions: twoAccepted }));
+        expect(unranked.item.tooltip).toContain('Solved: 2');
+    });
+
     it('uses the warning background in the last 15 minutes', () => {
         const { bar, item } = createBar(START + 170 * MINUTE);
 
