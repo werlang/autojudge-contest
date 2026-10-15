@@ -27,6 +27,9 @@ const SUBMISSION_POLL_BACKOFF_MS = 30 * 1000;
 const HIDDEN_STANDINGS_REFRESH_INTERVAL_MS = 60 * 1000;
 // Explorer re-render cadence so relative submission ages ("3 min ago") stay current.
 const EXPLORER_RERENDER_INTERVAL_MS = 60 * 1000;
+// Wait between contest-start reloads while the server still says "not
+// started" (the local clock runs ahead of the server's).
+const CONTEST_START_RETRY_MS = 60 * 1000;
 
 const LAST_PROBLEM_BY_FILE_KEY = 'autojudgeContest.lastProblemByFile';
 const MAX_REMEMBERED_FILES = 100;
@@ -143,6 +146,10 @@ export function createContestController({
     let teamsRefreshInFlight = false;
     // A silent restore started because the contest just began.
     let contestStartReloadInFlight = false;
+    // Earliest time (ms) for the next contest-start reload; 0 = no backoff.
+    let contestStartRetryAt = 0;
+    // The "not started" line was logged for the current not-started period.
+    let notStartedLogged = false;
     let standingsTimer = null;
     let explorerTimer = null;
     let sessionEndedPromptShown = false;
@@ -532,19 +539,29 @@ export function createContestController({
 
     /**
      * Once a contest shown as not started reaches its start time, run a silent
-     * full restore so the problems load without a manual refresh.
+     * full restore so the problems load without a manual refresh. When the
+     * server still says "not started" (client clock ahead), the next attempt
+     * waits CONTEST_START_RETRY_MS instead of following every standings tick.
      */
     const reloadIfContestStarted = () => {
         if (!currentSnapshot?.contestNotStarted
             || contestStartReloadInFlight
+            || now() < contestStartRetryAt
             || getContestTiming(currentSnapshot.contest, now()).phase === 'notStarted') {
             return;
         }
 
+        if (!contestStartRetryAt) {
+            log('info', 'The contest has started. Loading the problems…');
+        }
+
         contestStartReloadInFlight = true;
-        log('info', 'The contest has started. Loading the problems…');
+        const generation = sessionGeneration;
         void restoreSession(true).finally(() => {
             contestStartReloadInFlight = false;
+            if (generation === sessionGeneration && currentSnapshot?.contestNotStarted) {
+                contestStartRetryAt = now() + CONTEST_START_RETRY_MS;
+            }
         });
     };
 
@@ -632,6 +649,8 @@ export function createContestController({
     const startNewSession = () => {
         sessionGeneration += 1;
         stillJudgingLogged.clear();
+        notStartedLogged = false;
+        contestStartRetryAt = 0;
         stopAllPolling();
     };
 
@@ -907,8 +926,14 @@ export function createContestController({
 
             sessionEndedPromptShown = false;
             log('info', `Loaded ${toText(snapshot.contest?.name) || 'the contest'} for ${toText(snapshot.team?.name) || 'your team'}.`);
-            if (snapshot.contestNotStarted) {
-                // The session is kept; the tree shows the contest as not started until a refresh finds problems.
+            if (!snapshot.contestNotStarted) {
+                notStartedLogged = false;
+                contestStartRetryAt = 0;
+            }
+            else if (!notStartedLogged) {
+                // The session is kept; the tree shows the contest as not started
+                // until a reload finds problems. Logged once per not-started period.
+                notStartedLogged = true;
                 log('info', CONTEST_NOT_STARTED_MESSAGE);
             }
 

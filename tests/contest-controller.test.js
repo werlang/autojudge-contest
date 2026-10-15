@@ -1745,6 +1745,59 @@ describe('contest controller', () => {
             expect(showErrorMessage).not.toHaveBeenCalled();
         });
 
+        it('backs off to one reload a minute while the server still says not started, then loads the problems', async () => {
+            vi.useFakeTimers();
+            const startTime = '2026-05-28T03:59:00.000Z';
+            const waiting = { ...createSnapshot(), problems: [], contestNotStarted: true };
+            waiting.contest = { ...waiting.contest, startTime };
+            const started = { ...createSnapshot(), contestNotStarted: false };
+            sessionApi.restoreContestSession.mockResolvedValue(waiting);
+            sessionApi.refreshContestDetails.mockImplementation(async ({ contest }) => contest);
+            const controller = buildController({ teamsView: createFakeView(true) });
+            await controller.refreshTree({ silent: true });
+
+            // The local clock is past the start, but the server disagrees for 2 min.
+            for (let tick = 0; tick < 8; tick += 1) {
+                clock += 15000;
+                await vi.advanceTimersByTimeAsync(15000);
+            }
+
+            // Startup restore + one reload at 15 s, 75 s and 135 s at most.
+            expect(sessionApi.restoreContestSession.mock.calls.length).toBeLessThanOrEqual(3);
+            const lines = outputChannel.appendLine.mock.calls.map(([line]) => line);
+            expect(lines.filter(line => line.startsWith('The contest has not started yet.'))).toHaveLength(1);
+            expect(lines.filter(line => line.startsWith('The contest has started.'))).toHaveLength(1);
+
+            sessionApi.restoreContestSession.mockResolvedValue(started);
+            clock += 60000;
+            await vi.advanceTimersByTimeAsync(60000);
+
+            expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(started);
+        });
+
+        it('starts one contest-start reload even when standings ticks overlap it', async () => {
+            vi.useFakeTimers();
+            const startTime = '2026-05-28T03:59:00.000Z';
+            const waiting = { ...createSnapshot(), problems: [], contestNotStarted: true };
+            waiting.contest = { ...waiting.contest, startTime };
+            let finishReload;
+            sessionApi.restoreContestSession
+                .mockResolvedValueOnce(waiting)
+                .mockReturnValue(new Promise((resolve) => {
+                    finishReload = resolve;
+                }));
+            sessionApi.refreshContestDetails.mockImplementation(async ({ contest }) => contest);
+            const controller = buildController({ teamsView: createFakeView(true) });
+            await controller.refreshTree({ silent: true });
+
+            await vi.advanceTimersByTimeAsync(15000);
+            await vi.advanceTimersByTimeAsync(15000);
+            await vi.advanceTimersByTimeAsync(15000);
+
+            expect(sessionApi.restoreContestSession).toHaveBeenCalledTimes(2);
+            finishReload({ ...createSnapshot(), contestNotStarted: false });
+        });
+
         it('handles an ended session found by the timed standings refresh', async () => {
             await loginWithViews({});
             sessionApi.refreshContestDetails.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
