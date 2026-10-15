@@ -709,7 +709,8 @@ export function createContestController({
 
     /**
      * Load the stored session and show it. Failures other than an ended
-     * session keep the token and switch to the offline state.
+     * session keep the token: with a snapshot already shown it stays (with its
+     * verdict polls), otherwise the view switches to the offline state.
      * @param {boolean} silent no error toast (startup restore)
      * @returns {Promise<object | null>}
      */
@@ -739,8 +740,11 @@ export function createContestController({
                 return handleSessionEnded();
             }
 
-            const tokenStored = await hasStoredToken();
-            await syncTreeState(null, tokenStored ? VIEW_STATES.OFFLINE : VIEW_STATES.LOGGED_OUT);
+            if (!currentSnapshot) {
+                const tokenStored = await hasStoredToken();
+                await syncTreeState(null, tokenStored ? VIEW_STATES.OFFLINE : VIEW_STATES.LOGGED_OUT);
+            }
+
             log('error', `Could not load the contest: ${error.message}`);
             if (!silent) {
                 notifyFailure(error);

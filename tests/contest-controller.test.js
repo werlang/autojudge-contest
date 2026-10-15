@@ -504,6 +504,27 @@ describe('contest controller', () => {
             expect(sessionApi.clearStoredSession).not.toHaveBeenCalled();
         });
 
+        it('keeps the shown contest and its verdict polls when a manual refresh fails while logged in', async () => {
+            const snapshot = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
+            sessionApi.restoreContestSession.mockResolvedValueOnce(snapshot).mockRejectedValue(new Error('fetch failed'));
+            sessionApi.pollSubmissionResult.mockReturnValue(new Promise(() => {}));
+            const controller = buildController();
+            await controller.refreshTree({ silent: true });
+            const { signal } = sessionApi.pollSubmissionResult.mock.calls[0][0];
+            treeProvider.setSnapshot.mockClear();
+            setContext.mockClear();
+
+            const result = await controller.refreshTree();
+            await flushPromises();
+
+            expect(result).toBeNull();
+            expect(treeProvider.setSnapshot).not.toHaveBeenCalled();
+            expect(setContext).not.toHaveBeenCalled();
+            expect(signal.aborted).toBe(false);
+            expect(showErrorMessage).toHaveBeenCalledWith('fetch failed');
+            expect(outputChannel.appendLine).toHaveBeenCalledWith('Could not load the contest: fetch failed');
+        });
+
         it('shows logged out instead of offline when a failed refresh has no stored token', async () => {
             sessionApi.restoreContestSession.mockRejectedValue(new Error('fetch failed'));
             sessionApi.readStoredSession.mockResolvedValue(null);
