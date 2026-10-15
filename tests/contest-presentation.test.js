@@ -45,20 +45,27 @@ describe('renderProblemPage', () => {
         expect(page).toContain('**Not attempted yet**');
         expect(page).toContain('Add two integers.');
         expect(page).toContain('## Public test cases');
-        expect(page).toContain('| 1 | <code>1 2</code> | <code>3</code> |');
-        // Pipes, leading spaces, and Markdown emphasis stay literal inside cells.
-        expect(page).toContain('| 2 | <code>&nbsp;&nbsp;5&#124;6<br>7</code> | <code>a&#42;b&#42;c</code> |');
-        expect(page).not.toContain('| 0 |');
+        expect(page).toContain('### Case 1\n\n**Input**\n\n```text\n1 2\n```\n\n**Output**\n\n```text\n3\n```');
+        expect(page).toContain('### Case 2\n\n**Input**\n\n```text\n  5|6\n7\n```\n\n**Output**\n\n```text\na*b*c\n```');
+        expect(page).not.toContain('### Case 0');
+        expect(page).not.toContain('<code>');
         expect(page).not.toMatch(EMOJI);
     });
 
-    it('preserves runs of spaces and tabs in public test case cells', () => {
-        const problem = { publicId: 'pwhitespace0', title: 'Ws', input: ['a  b   c\td \n\t x'], output: ['1 2'] };
+    it('keeps a multi-line case input verbatim in one block', () => {
+        const problem = { publicId: 'pwhitespace0', title: 'Ws', input: ['10\r\n9\n\n a  b\tc \n'], output: ['1 2'] };
         const page = renderProblemPage(problem, { problems: [problem] });
 
-        expect(page).toContain('<code>a &nbsp;b &nbsp;&nbsp;c &nbsp;&nbsp;&nbsp;d&nbsp;<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;x</code>');
-        // Single spaces between words stay plain.
-        expect(page).toContain('<code>1 2</code>');
+        expect(page).toContain('```text\n10\n9\n\n a  b\tc \n```');
+        expect(page).not.toContain('<br>');
+    });
+
+    it('fences case text longer than any backtick run inside it', () => {
+        const problem = { publicId: 'pbackticks00', title: 'Bt', input: ['a ```` b\n`'], output: ['``'] };
+        const page = renderProblemPage(problem, { problems: [problem] });
+
+        expect(page).toContain('`````text\na ```` b\n`\n`````');
+        expect(page).toContain('```text\n``\n```');
     });
 
     it('summarizes the team progress on the problem', () => {

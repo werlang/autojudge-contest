@@ -22,8 +22,8 @@ import { extractPublicCases } from '../workspace/contest-public-cases.js';
  *
  * Safety: every team, contest, problem, file and verdict name that is
  * interpolated inline goes through `escapeInline`, so it renders as plain text
- * (no forged headings, links or HTML). Judge output sits in code fences, public
- * test case cells are entity-encoded, and problem statements are intentionally
+ * (no forged headings, links or HTML). Judge output and public test cases sit in
+ * code fences, and problem statements are intentionally
  * rendered as the Markdown the contest author wrote.
  */
 
@@ -78,9 +78,9 @@ export function renderProblemPage(problem, { problems = [], submissions = [] } =
     const statement = getProblemStatement(problem);
     lines.push(statement ? statement.trim() : '*The statement is not available in the current contest data.*');
 
-    const casesTable = buildPublicCasesTable(problem);
-    if (casesTable) {
-        lines.push('', casesTable);
+    const publicCases = buildPublicCases(problem);
+    if (publicCases) {
+        lines.push('', publicCases);
     }
 
     return `${lines.join('\n')}\n`;
@@ -484,12 +484,15 @@ function getProblemStatement(problem) {
 }
 
 /**
- * Render the public input/output pairs as a Markdown table numbered from 1,
- * matching the exported testcase files. Returns '' when there are none.
+ * Render the public input/output pairs as one `### Case N` section each,
+ * numbered from 1 to match the exported testcase files. Input and output sit in
+ * stacked code fences so multi-line values stay one copyable block with their
+ * whitespace intact (HTML tables cannot hold blank lines safely in Markdown).
+ * Returns '' when there are none.
  * @param {object} problem
  * @returns {string}
  */
-function buildPublicCasesTable(problem) {
+function buildPublicCases(problem) {
     const publicCases = extractPublicCases(problem);
     if (!publicCases.length) {
         return '';
@@ -497,38 +500,29 @@ function buildPublicCasesTable(problem) {
 
     return [
         '## Public test cases',
-        '',
-        '| # | Input | Output |',
-        '| :-- | :-- | :-- |',
-        ...publicCases.map((testCase, index) =>
-            `| ${index + 1} | ${formatTableCell(testCase.input)} | ${formatTableCell(testCase.output)} |`),
+        ...publicCases.flatMap((testCase, index) => [
+            '',
+            `### Case ${index + 1}`,
+            '',
+            '**Input**',
+            '',
+            fence(normalizeOutput(testCase.input)),
+            '',
+            '**Output**',
+            '',
+            fence(normalizeOutput(testCase.output)),
+        ]),
     ].join('\n');
 }
 
 /**
- * Keep multiline text readable inside a Markdown table cell: encode HTML,
- * pipe, and Markdown emphasis characters as entities (so `a*b*c` stays
- * literal), preserve whitespace that HTML would collapse (tabs become four
- * spaces, leading and trailing spaces and extra spaces in a run become
- * `&nbsp;`), and join lines with `<br>`.
+ * Normalize line endings to `\n` and drop trailing newlines so a value renders
+ * as a compact code block.
  * @param {unknown} value
  * @returns {string}
  */
-function formatTableCell(value) {
-    const lines = String(value ?? '')
-        .replace(/\r\n?/g, '\n')
-        .replace(/\n+$/, '')
-        .split('\n')
-        .map(line => line
-            .replace(/[&<>|*_`[\]\\~]/g, char => `&#${char.charCodeAt(0)};`)
-            .replace(/\t/g, '    ')
-            .replace(/^ +| +$| {2,}/g, (spaces, offset, text) => {
-                const internal = offset > 0 && offset + spaces.length < text.length;
-                // An internal run keeps one breakable space; the rest cannot collapse.
-                return internal ? ` ${'&nbsp;'.repeat(spaces.length - 1)}` : '&nbsp;'.repeat(spaces.length);
-            }));
-
-    return `<code>${lines.join('<br>')}</code>`;
+function normalizeOutput(value) {
+    return String(value ?? '').replace(/\r\n?/g, '\n').replace(/\n+$/, '');
 }
 
 /**
