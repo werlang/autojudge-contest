@@ -20,7 +20,7 @@ The **AutoJudge Contest** extension allows competitive programming teams to focu
 ## ✨ Features
 
 - **🔐 Simple Team Authentication**
-  Log in through the AutoJudge website: VS Code opens your browser, you enter your team code and PIN (or confirm if you are already logged in there), and the browser sends you back to VS Code logged in. Both share the same team session, which stays valid for the whole contest and is restored when VS Code restarts. If the AutoJudge server cannot be reached (or does not answer within 20 seconds), the views show an offline notice with a **Retry** link, and your session is kept.
+  Log in through the AutoJudge website: VS Code opens your browser, you enter your team code and PIN (or confirm if you are already logged in there), and the browser sends you back to VS Code logged in. Both share the same team session, which stays valid for the whole contest and is restored when VS Code restarts. If the AutoJudge server cannot be reached (or does not answer within 20 seconds), the views show an offline notice with a **Retry** link, and your session is kept. A solution upload gets 60 seconds; if it does not finish in time, check Contest Explorer before submitting again, since the server may already have received it.
 
 - **📖 Interactive Problem Browser**
   Problems are listed in letter order (**A.**, **B.**, …) with your solved state and attempt count. Open a problem to read its statement, with its public test cases, as clean, readable Markdown directly inside VS Code. No web browser required.
