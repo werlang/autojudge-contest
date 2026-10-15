@@ -28,6 +28,8 @@ const SOLVED_MARK = '✓';
 const JUDGING_LABEL = 'Judging…';
 // Mid grey reads against both light and dark sidebar backgrounds.
 const ICON_OUTLINE = '#808080';
+// Neutral fill/ring used when a problem has no valid balloon colour.
+const ICON_FALLBACK_COLOR = '#8b8b8b';
 
 /**
  * Provide the contest explorer tree for logged-in contest snapshots: a contest
@@ -112,7 +114,8 @@ export class ContestTreeProvider {
      * dark balloon colours (e.g. `#f0f0f0`) still read on light and dark themes.
      * The dot (12 px) and the ring (9 px across, 2 px stroke) differ in both
      * fill and size so the two states are distinct at 16 px. A missing or
-     * non-hex color renders a transparent shape, leaving only the outline.
+     * non-hex color falls back to a visible neutral grey (`ICON_FALLBACK_COLOR`)
+     * for the fill and the ring, so the solved state never disappears.
      * @param {string | undefined | null} hexColor
      * @param {boolean} [solved=false]
      * @returns {import('vscode').Uri}
@@ -120,7 +123,7 @@ export class ContestTreeProvider {
     createColoredCircleIcon(hexColor, solved = false) {
         const color = typeof hexColor === 'string' && /^#?[0-9a-f]{3,8}$/i.test(hexColor.trim())
             ? (hexColor.trim().startsWith('#') ? hexColor.trim() : `#${hexColor.trim()}`)
-            : '#00000000';
+            : ICON_FALLBACK_COLOR;
         const shape = solved
             ? `<circle cx="8" cy="8" r="5.5" fill="${color}" stroke="${ICON_OUTLINE}" stroke-opacity="0.6" stroke-width="1" />`
             : `<circle cx="8" cy="8" r="4.5" fill="none" stroke="${color}" stroke-width="2" />`

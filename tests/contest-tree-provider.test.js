@@ -316,8 +316,20 @@ describe('contest tree provider', () => {
         const problems = provider.getChildren().slice(1);
 
         expect(problems.map(item => item.label)).toEqual(['A. Problem A', 'B. Problem B']);
-        expect(problems[0].iconPath.toString()).toContain(encodeURIComponent('#00000000'));
-        expect(provider.createColoredCircleIcon('not a color').toString()).toContain(encodeURIComponent('#00000000'));
+        expect(problems[0].iconPath.toString()).toContain(encodeURIComponent('#8b8b8b'));
+        expect(provider.createColoredCircleIcon('not a color').toString()).toContain(encodeURIComponent('#8b8b8b'));
+    });
+
+    it('keeps solved and unsolved icons visibly different when the color is missing', () => {
+        const provider = new ContestTreeProvider();
+        const solved = decodeURIComponent(provider.createColoredCircleIcon(undefined, true).toString());
+        const unsolved = decodeURIComponent(provider.createColoredCircleIcon(undefined, false).toString());
+
+        expect(solved).toContain('r="5.5" fill="#8b8b8b"');
+        expect(unsolved).toContain('r="4.5" fill="none" stroke="#8b8b8b" stroke-width="2"');
+        expect(solved).not.toContain('#00000000');
+        expect(unsolved).not.toContain('#00000000');
+        expect(solved).not.toEqual(unsolved);
     });
 
     it('renders submissions newest-first with status, relative time, stable ids, and a tooltip', () => {
