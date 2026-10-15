@@ -15,7 +15,7 @@ import { HANDOFF_INVALID_CODE, INVALID_SETTING_CODE, isSessionEnded } from '../s
 import { BrowserLoginError, LOGIN_FAILURE } from '../services/browser-login.js';
 import { isPassedSubmission, isPendingSubmission } from '../utils/submission-status.js';
 import { resolveRouteId } from '../utils/public-id.js';
-import { sortProblems, summarizeProblemSubmissions } from '../utils/contest-progress.js';
+import { getContestTiming, sortProblems, summarizeProblemSubmissions } from '../utils/contest-progress.js';
 import { extractPublicCases } from '../workspace/contest-public-cases.js';
 import { ContestPageFiles, resolvePreviewRoot } from '../workspace/contest-page-files.js';
 import { TEAM_PANEL_REFRESH_INTERVAL_MS } from '../utils/config.js';
@@ -141,6 +141,8 @@ export function createContestController({
     let currentSnapshot = treeProvider.getSnapshot?.() ?? null;
     let teamsRefreshErrorMessage = null;
     let teamsRefreshInFlight = false;
+    // A silent restore started because the contest just began.
+    let contestStartReloadInFlight = false;
     let standingsTimer = null;
     let explorerTimer = null;
     let sessionEndedPromptShown = false;
@@ -458,7 +460,7 @@ export function createContestController({
     /**
      * Refresh contest standings without reloading problems or submissions.
      * Updates only the Standings view and the status bar; the explorer is not
-     * re-rendered.
+     * re-rendered. When the contest has just started, a full restore follows.
      */
     const refreshTeamsStandings = async () => {
         if (teamsRefreshInFlight) {
@@ -501,6 +503,7 @@ export function createContestController({
             };
             teamsStandingsProvider.setSnapshot(currentSnapshot);
             syncStatusBar();
+            reloadIfContestStarted();
         }
         catch (error) {
             if (generation !== sessionGeneration) {
@@ -520,6 +523,24 @@ export function createContestController({
         finally {
             teamsRefreshInFlight = false;
         }
+    };
+
+    /**
+     * Once a contest shown as not started reaches its start time, run a silent
+     * full restore so the problems load without a manual refresh.
+     */
+    const reloadIfContestStarted = () => {
+        if (!currentSnapshot?.contestNotStarted
+            || contestStartReloadInFlight
+            || getContestTiming(currentSnapshot.contest, now()).phase === 'notStarted') {
+            return;
+        }
+
+        contestStartReloadInFlight = true;
+        log('info', 'The contest has started. Loading the problems…');
+        void restoreSession(true).finally(() => {
+            contestStartReloadInFlight = false;
+        });
     };
 
     /**
