@@ -44,7 +44,7 @@ vi.mock('vscode', () => ({
 
 vi.mock('../src/services/contest-session.js', () => ({
     clearStoredSession: vi.fn(),
-    pollSubmissionResult: vi.fn(),
+    pollSubmissionResults: vi.fn(),
     readStoredSession: vi.fn(),
     redeemAndLoadContest: vi.fn(),
     refreshContestDetails: vi.fn(),

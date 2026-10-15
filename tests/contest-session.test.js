@@ -408,101 +408,128 @@ describe('contest session flow', () => {
         });
     });
 
-    it('polls submission history until the created submission reaches a final verdict', async () => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date('2026-05-29T12:00:00.000Z'));
+    /**
+     * Build a tracker over a pending-id set that records resolved submissions.
+     * @param {Array<number | string>} ids
+     * @returns {{ ids: Function, resolve: Function, onError: Function, pending: Set<string>, resolved: object[], errors: Error[] }}
+     */
+    function createTracker(ids) {
+        const pending = new Set(ids.map(String));
+        const resolved = [];
+        const errors = [];
+        return {
+            pending,
+            resolved,
+            errors,
+            ids: () => [...pending],
+            resolve: (submission) => {
+                pending.delete(String(submission.id));
+                resolved.push(submission);
+            },
+            onError: (error) => errors.push(error),
+        };
+    }
 
+    it('polls with one request per interval for every pending id until each is final', async () => {
+        vi.useFakeTimers();
         const context = createContext();
         const session = await import('../src/services/contest-session.js');
-
-        await session.writeStoredSession(context, {
-            token: 'team-jwt-token',
-        });
+        await session.writeStoredSession(context, { token: 'team-jwt-token' });
 
         fetchMock
-            .mockResolvedValueOnce(jsonResponse({
-                submissions: [
-                    { id: 31, status: 'PENDING' },
-                ],
-            }))
-            .mockResolvedValueOnce(jsonResponse({
-                submissions: [
-                    { id: 31, status: 'RUNNING' },
-                ],
-            }))
-            .mockResolvedValueOnce(jsonResponse({
-                submissions: [
-                    { id: 31, status: 'ACCEPTED' },
-                ],
-            }));
+            .mockResolvedValueOnce(jsonResponse({ submissions: [{ id: 31, status: 'PENDING' }, { id: 32, status: 'RUNNING' }] }))
+            .mockResolvedValueOnce(jsonResponse({ submissions: [{ id: 31, status: 'ACCEPTED' }, { id: 32, status: 'RUNNING' }, { id: 7, status: 'WRONG_ANSWER' }] }))
+            .mockResolvedValueOnce(jsonResponse({ submissions: [{ id: 31, status: 'ACCEPTED' }, { id: 32, status: 'WRONG_ANSWER' }] }));
+        const tracker = createTracker([31, 32]);
 
-        const pollPromise = session.pollSubmissionResult({
+        const loop = session.pollSubmissionResults({
             baseUrl: 'https://api.autojudge.test/base',
             context,
             pollIntervalMs: 1000,
-            submissionId: 31,
-            timeoutMs: 3000,
+            tracker,
         });
+        await vi.advanceTimersByTimeAsync(3000);
+        await loop;
 
-        await vi.advanceTimersByTimeAsync(2000);
-
-        await expect(pollPromise).resolves.toEqual({
-            id: 31,
-            status: 'ACCEPTED',
-        });
+        expect(fetchMock).toHaveBeenCalledTimes(3);
         expect(fetchMock).toHaveBeenNthCalledWith(1, 'https://api.autojudge.test/base/submissions', expect.objectContaining({
             method: 'GET',
-            headers: expect.objectContaining({
-                Authorization: 'Bearer team-jwt-token',
-            }),
+            headers: expect.objectContaining({ Authorization: 'Bearer team-jwt-token' }),
         }));
-        expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://api.autojudge.test/base/submissions', expect.objectContaining({
-            method: 'GET',
-            headers: expect.objectContaining({
-                Authorization: 'Bearer team-jwt-token',
-            }),
-        }));
-        expect(fetchMock).toHaveBeenNthCalledWith(3, 'https://api.autojudge.test/base/submissions', expect.objectContaining({
-            method: 'GET',
-            headers: expect.objectContaining({
-                Authorization: 'Bearer team-jwt-token',
-            }),
-        }));
+        expect(tracker.resolved).toEqual([{ id: 31, status: 'ACCEPTED' }, { id: 32, status: 'WRONG_ANSWER' }]);
 
         vi.useRealTimers();
     });
 
-    it('returns null when submission polling reaches the timeout without a final verdict', async () => {
+    it('retries after a failed request instead of ending the poll', async () => {
         vi.useFakeTimers();
-        vi.setSystemTime(new Date('2026-05-29T12:00:00.000Z'));
-
         const context = createContext();
         const session = await import('../src/services/contest-session.js');
+        await session.writeStoredSession(context, { token: 'team-jwt-token' });
 
-        await session.writeStoredSession(context, {
-            token: 'team-jwt-token',
-        });
+        fetchMock
+            .mockRejectedValueOnce(new Error('fetch failed'))
+            .mockResolvedValueOnce(jsonResponse({ message: 'Bad gateway.' }, 502))
+            .mockResolvedValueOnce(jsonResponse({ submissions: [{ id: 31, status: 'ACCEPTED' }] }));
+        const tracker = createTracker([31]);
 
-        fetchMock.mockResolvedValue(jsonResponse({
-            submissions: [
-                { id: 31, status: 'PENDING' },
-            ],
-        }));
+        const loop = session.pollSubmissionResults({ baseUrl: 'https://api.autojudge.test', context, pollIntervalMs: 1000, tracker });
+        await vi.advanceTimersByTimeAsync(3000);
+        await loop;
 
-        const pollPromise = session.pollSubmissionResult({
-            baseUrl: 'https://api.autojudge.test/base',
-            context,
-            pollIntervalMs: 1000,
-            submissionId: 31,
-            timeoutMs: 2000,
-        });
-
-        await vi.advanceTimersByTimeAsync(2000);
-
-        await expect(pollPromise).resolves.toBeNull();
-        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(tracker.errors.map(error => error.message)).toEqual(['fetch failed', 'Bad gateway.']);
+        expect(tracker.resolved).toEqual([{ id: 31, status: 'ACCEPTED' }]);
 
         vi.useRealTimers();
+    });
+
+    it('rethrows SESSION_ENDED from a poll request', async () => {
+        const context = createContext();
+        const session = await import('../src/services/contest-session.js');
+        await session.writeStoredSession(context, { token: 'old-token' });
+        fetchMock.mockResolvedValueOnce(jsonResponse({ code: 'SESSION_ENDED', message: 'ended' }, 401));
+
+        await expect(session.pollSubmissionResults({
+            baseUrl: 'https://api.autojudge.test',
+            context,
+            pollIntervalMs: 1000,
+            tracker: createTracker([31]),
+        })).rejects.toMatchObject({ code: 'SESSION_ENDED' });
+    });
+
+    it('passes the abort signal to the request and stops when it aborts', async () => {
+        const context = createContext();
+        const session = await import('../src/services/contest-session.js');
+        await session.writeStoredSession(context, { token: 'team-jwt-token' });
+        const abort = new AbortController();
+        fetchMock.mockImplementation((_url, { signal }) => new Promise((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+        }));
+        const tracker = createTracker([31]);
+
+        const loop = session.pollSubmissionResults({
+            baseUrl: 'https://api.autojudge.test',
+            context,
+            pollIntervalMs: 1000,
+            signal: abort.signal,
+            tracker,
+        });
+        await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+        abort.abort();
+
+        await expect(loop).resolves.toBeUndefined();
+        expect(tracker.errors).toEqual([]);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('ends without a request once the tracker has no ids left', async () => {
+        const context = createContext();
+        const session = await import('../src/services/contest-session.js');
+        await session.writeStoredSession(context, { token: 'team-jwt-token' });
+
+        await session.pollSubmissionResults({ baseUrl: 'https://api.autojudge.test', context, tracker: createTracker([]) });
+
+        expect(fetchMock).not.toHaveBeenCalled();
     });
 });
 describe('contest route ids', () => {

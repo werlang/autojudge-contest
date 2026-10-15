@@ -145,6 +145,7 @@ describe('contest controller', () => {
     let statusBar;
     let pageFiles;
     let controllers;
+    let clock;
 
     beforeEach(() => {
         workspaceStateStore = {};
@@ -185,7 +186,7 @@ describe('contest controller', () => {
             clearStoredSession: vi.fn(),
             readStoredSession: vi.fn(async () => ({ token: 'stored-token' })),
             redeemAndLoadContest: vi.fn(),
-            pollSubmissionResult: vi.fn(),
+            pollSubmissionResults: vi.fn(),
             refreshContestDetails: vi.fn(),
             restoreContestSession: vi.fn(),
             submitSolution: vi.fn(),
@@ -213,6 +214,9 @@ describe('contest controller', () => {
         };
         statusBar = { update: vi.fn(), setPendingCount: vi.fn() };
         controllers = [];
+        clock = Date.parse('2026-05-28T04:00:00.000Z');
+        // The shared poll loop runs until it is stopped unless a test says otherwise.
+        pollHangs();
     });
 
     afterEach(() => {
@@ -221,6 +225,47 @@ describe('contest controller', () => {
         }
         vi.useRealTimers();
     });
+
+    /**
+     * Make the shared poll loop run until it is aborted.
+     */
+    function pollHangs() {
+        sessionApi.pollSubmissionResults.mockImplementation(({ signal }) => new Promise((resolve) => {
+            signal.addEventListener('abort', resolve, { once: true });
+        }));
+    }
+
+    /**
+     * Make the shared poll loop deliver these final verdicts, then end.
+     * @param {...object} finals
+     */
+    function pollResolves(...finals) {
+        sessionApi.pollSubmissionResults.mockImplementation(async ({ tracker }) => {
+            tracker.ids();
+            for (const final of finals) {
+                await tracker.resolve(final);
+            }
+        });
+    }
+
+    /**
+     * Make the shared poll loop reach the poll timeout without a verdict.
+     */
+    function pollTimesOut() {
+        sessionApi.pollSubmissionResults.mockImplementation(async ({ tracker }) => {
+            clock += 120000;
+            tracker.ids();
+        });
+    }
+
+    /**
+     * Read the submission ids the given poll loop call is tracking.
+     * @param {number} [call]
+     * @returns {string[]}
+     */
+    function trackedIds(call = 0) {
+        return sessionApi.pollSubmissionResults.mock.calls[call][0].tracker.ids();
+    }
 
     /**
      * Build a controller with the shared doubles and optional overrides.
@@ -252,6 +297,7 @@ describe('contest controller', () => {
             treeProvider,
             withCancellableProgress,
             withExplorerProgress,
+            now: () => clock,
             ...overrides,
         });
         controllers.push(controller);
@@ -507,10 +553,9 @@ describe('contest controller', () => {
         it('keeps the shown contest and its verdict polls when a manual refresh fails while logged in', async () => {
             const snapshot = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
             sessionApi.restoreContestSession.mockResolvedValueOnce(snapshot).mockRejectedValue(new Error('fetch failed'));
-            sessionApi.pollSubmissionResult.mockReturnValue(new Promise(() => {}));
             const controller = buildController();
             await controller.refreshTree({ silent: true });
-            const { signal } = sessionApi.pollSubmissionResult.mock.calls[0][0];
+            const { signal } = sessionApi.pollSubmissionResults.mock.calls[0][0];
             treeProvider.setSnapshot.mockClear();
             setContext.mockClear();
 
@@ -723,7 +768,7 @@ describe('contest controller', () => {
 
         beforeEach(() => {
             showWarningMessage.mockImplementation(async (message) => (message.startsWith('Submit ') ? 'Submit' : undefined));
-            sessionApi.pollSubmissionResult.mockResolvedValue(null);
+            pollTimesOut();
         });
 
         it('confirms, submits the tree item problem, merges the pending submission, and remembers the problem', async () => {
@@ -830,7 +875,7 @@ describe('contest controller', () => {
             resolveConfirmBeforeSubmit.mockReturnValue(false);
             const snapshot = createSnapshot();
             sessionApi.submitSolution.mockResolvedValueOnce(pending(27)).mockResolvedValueOnce(pending(28));
-            sessionApi.pollSubmissionResult.mockReturnValue(new Promise(() => {}));
+            pollHangs();
             const controller = buildLoggedInController(snapshot);
 
             void controller.submitActiveFile(snapshot.problems[0]);
@@ -940,7 +985,7 @@ describe('contest controller', () => {
 
             await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
 
-            expect(sessionApi.pollSubmissionResult).toHaveBeenCalledWith(expect.objectContaining({ pollIntervalMs: 2500 }));
+            expect(sessionApi.pollSubmissionResults).toHaveBeenCalledWith(expect.objectContaining({ pollIntervalMs: 2500 }));
         });
 
         it('neither saves nor submits when the unsaved-changes prompt is cancelled', async () => {
@@ -961,19 +1006,18 @@ describe('contest controller', () => {
             const snapshot = createSnapshot();
             const final = { ...pending(), status: 'ACCEPTED' };
             sessionApi.submitSolution.mockResolvedValue(pending());
-            sessionApi.pollSubmissionResult.mockResolvedValue(final);
+            pollResolves(final);
             showInformationMessage.mockResolvedValue('View Details');
 
             const result = await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
             await flushPromises();
 
-            expect(sessionApi.pollSubmissionResult).toHaveBeenCalledWith({
+            expect(sessionApi.pollSubmissionResults).toHaveBeenCalledWith({
                 baseUrl: 'https://api.autojudge.test',
                 context,
                 pollIntervalMs: 1500,
                 signal: expect.any(Object),
-                submissionId: 27,
-                timeoutMs: 120000,
+                tracker: expect.any(Object),
             });
             expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith({ ...snapshot, submissions: [final] });
             expect(statusBar.setPendingCount).toHaveBeenLastCalledWith(0);
@@ -988,7 +1032,7 @@ describe('contest controller', () => {
             const snapshot = createSnapshot();
             const final = { ...pending(), status: 'WRONG_ANSWER', hint: { expected: '3\n', received: '4\n' } };
             sessionApi.submitSolution.mockResolvedValue(pending());
-            sessionApi.pollSubmissionResult.mockResolvedValue(final);
+            pollResolves(final);
             showWarningMessage.mockImplementation(async (message) => {
                 if (message.startsWith('Submit ')) {
                     return 'Submit';
@@ -1012,7 +1056,7 @@ describe('contest controller', () => {
         it('returns without awaiting the verdict toast', async () => {
             const snapshot = createSnapshot();
             sessionApi.submitSolution.mockResolvedValue(pending());
-            sessionApi.pollSubmissionResult.mockResolvedValue({ ...pending(), status: 'ACCEPTED' });
+            pollResolves({ ...pending(), status: 'ACCEPTED' });
             showInformationMessage.mockReturnValue(new Promise(() => {}));
 
             await expect(buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]))
@@ -1022,11 +1066,10 @@ describe('contest controller', () => {
         it('only logs when the submission is still pending after the poll timeout', async () => {
             const snapshot = createSnapshot();
             sessionApi.submitSolution.mockResolvedValue(pending());
-            sessionApi.pollSubmissionResult.mockResolvedValue(null);
 
             const result = await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
 
-            expect(outputChannel.appendLine).toHaveBeenCalledWith('Submission #27 is still being judged. Refresh later to see the verdict.');
+            expect(outputChannel.appendLine).toHaveBeenCalledWith('Submission #27 is still being judged. Checking again in 30 s.');
             expect(showInformationMessage).not.toHaveBeenCalled();
             expect(showErrorMessage).not.toHaveBeenCalled();
             expect(result).toEqual(pending());
@@ -1035,9 +1078,10 @@ describe('contest controller', () => {
         it('handles an ended session found while polling a submission verdict', async () => {
             const snapshot = createSnapshot();
             sessionApi.submitSolution.mockResolvedValue(pending(5));
-            sessionApi.pollSubmissionResult.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
+            sessionApi.pollSubmissionResults.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
 
             await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+            await flushPromises();
 
             expect(sessionApi.clearStoredSession).toHaveBeenCalledWith(context);
             expect(showWarningMessage).toHaveBeenCalledWith(expect.stringContaining('Your session ended'), 'Log In');
@@ -1065,7 +1109,7 @@ describe('contest controller', () => {
                     snapshot.submissions[0],
                 ],
             }));
-            expect(sessionApi.pollSubmissionResult).not.toHaveBeenCalled();
+            expect(sessionApi.pollSubmissionResults).not.toHaveBeenCalled();
         });
     });
 
@@ -1080,31 +1124,131 @@ describe('contest controller', () => {
                 ],
             };
             sessionApi.restoreContestSession.mockResolvedValue(snapshot);
-            sessionApi.pollSubmissionResult.mockReturnValue(new Promise(() => {}));
             const controller = buildController();
 
             await controller.refreshTree({ silent: true });
             await controller.refreshTree();
 
-            expect(sessionApi.pollSubmissionResult.mock.calls.map(([options]) => options.submissionId)).toEqual([1, 3]);
+            // One shared loop checks every pending id.
+            expect(sessionApi.pollSubmissionResults).toHaveBeenCalledTimes(1);
+            expect(trackedIds()).toEqual(['1', '3']);
             expect(statusBar.setPendingCount).toHaveBeenLastCalledWith(2);
+        });
+
+        it('re-polls a timed-out submission after a 30 s backoff', async () => {
+            vi.useFakeTimers();
+            const snapshot = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
+            sessionApi.restoreContestSession.mockResolvedValue(snapshot);
+            sessionApi.refreshContestDetails.mockResolvedValue(snapshot.contest);
+            pollTimesOut();
+            const controller = buildController();
+
+            await controller.refreshTree({ silent: true });
+            await vi.advanceTimersByTimeAsync(0);
+            expect(outputChannel.appendLine).toHaveBeenCalledWith('Submission #1 is still being judged. Checking again in 30 s.');
+            expect(sessionApi.pollSubmissionResults).toHaveBeenCalledTimes(1);
+
+            pollHangs();
+            await vi.advanceTimersByTimeAsync(29999);
+            expect(sessionApi.pollSubmissionResults).toHaveBeenCalledTimes(1);
+            await vi.advanceTimersByTimeAsync(1);
+
+            // The timed-out id left the pending set, so it is tracked again.
+            expect(sessionApi.pollSubmissionResults).toHaveBeenCalledTimes(2);
+            expect(trackedIds(1)).toEqual(['1']);
+        });
+
+        it('does not re-poll a timed-out submission after logout', async () => {
+            vi.useFakeTimers();
+            const snapshot = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
+            sessionApi.restoreContestSession.mockResolvedValue(snapshot);
+            pollTimesOut();
+            const controller = buildController();
+
+            await controller.refreshTree({ silent: true });
+            await vi.advanceTimersByTimeAsync(0);
+            await controller.logoutTeam();
+            await vi.advanceTimersByTimeAsync(60000);
+
+            expect(sessionApi.pollSubmissionResults).toHaveBeenCalledTimes(1);
+        });
+
+        it('starts a fresh loop for a submission tracked while the previous loop was ending', async () => {
+            const first = { ...createSnapshot(), submissions: [{ id: 40, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
+            const second = {
+                ...first,
+                submissions: [
+                    { id: 41, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } },
+                    { id: 40, status: 'ACCEPTED', problem: { publicId: 'pa1b2c3d4e5f6' } },
+                ],
+            };
+            sessionApi.restoreContestSession.mockResolvedValueOnce(first).mockResolvedValue(second);
+            const controller = buildController();
+            sessionApi.pollSubmissionResults.mockImplementationOnce(async ({ tracker }) => {
+                tracker.ids();
+                await tracker.resolve({ id: 40, status: 'ACCEPTED', problem: { publicId: 'pa1b2c3d4e5f6' } });
+                expect(tracker.ids()).toEqual([]);
+                // Tracked after the loop saw an empty set, before it returned.
+                await controller.refreshTree({ silent: true });
+            });
+
+            await controller.refreshTree({ silent: true });
+            await flushPromises(30);
+
+            expect(sessionApi.pollSubmissionResults).toHaveBeenCalledTimes(2);
+            expect(trackedIds(1)).toEqual(['41']);
+        });
+
+        it('does not spin when a poll loop returns while its ids are still tracked', async () => {
+            const snapshot = { ...createSnapshot(), submissions: [{ id: 40, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
+            sessionApi.restoreContestSession.mockResolvedValue(snapshot);
+            sessionApi.pollSubmissionResults.mockImplementation(async ({ tracker }) => {
+                tracker.ids();
+            });
+
+            await buildController().refreshTree({ silent: true });
+            await flushPromises(30);
+
+            expect(sessionApi.pollSubmissionResults).toHaveBeenCalledTimes(1);
+        });
+
+        it('logs a failed check once per message and keeps the submission tracked', async () => {
+            const snapshot = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
+            sessionApi.restoreContestSession.mockResolvedValue(snapshot);
+            const controller = buildController();
+
+            await controller.refreshTree({ silent: true });
+            const { tracker } = sessionApi.pollSubmissionResults.mock.calls[0][0];
+            tracker.onError(new Error('fetch failed'));
+            tracker.onError(new Error('fetch failed'));
+
+            expect(outputChannel.appendLine.mock.calls.filter(([line]) => line.includes('fetch failed'))).toHaveLength(1);
+            expect(tracker.ids()).toEqual(['1']);
+        });
+
+        it('stops tracking with an error toast when the poll loop cannot run for a user submit', async () => {
+            const snapshot = createSnapshot();
+            showWarningMessage.mockResolvedValue('Submit');
+            sessionApi.submitSolution.mockResolvedValue({ id: 41, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } });
+            sessionApi.pollSubmissionResults.mockRejectedValue(new Error('Log in to AutoJudge Contest before checking a submission result.'));
+
+            const result = await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+
+            expect(result).toEqual(expect.objectContaining({ id: 41, status: 'PENDING' }));
+            expect(showErrorMessage).toHaveBeenCalledWith('Could not check submission #41: Log in to AutoJudge Contest before checking a submission result.');
         });
 
         it('stops polling on logout and ignores a verdict that arrives afterwards', async () => {
             const snapshot = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
             sessionApi.restoreContestSession.mockResolvedValue(snapshot);
-            let resolvePoll;
-            sessionApi.pollSubmissionResult.mockReturnValue(new Promise((resolve) => {
-                resolvePoll = resolve;
-            }));
             const controller = buildController();
 
             await controller.refreshTree({ silent: true });
-            const { signal } = sessionApi.pollSubmissionResult.mock.calls[0][0];
+            const { signal, tracker } = sessionApi.pollSubmissionResults.mock.calls[0][0];
             await controller.logoutTeam();
 
             expect(signal.aborted).toBe(true);
-            resolvePoll({ id: 1, status: 'ACCEPTED', problem: { publicId: 'pa1b2c3d4e5f6' } });
+            await tracker.resolve({ id: 1, status: 'ACCEPTED', problem: { publicId: 'pa1b2c3d4e5f6' } });
             await flushPromises();
 
             expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(null);
@@ -1196,18 +1340,19 @@ describe('contest controller', () => {
             const old = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
             const poll = deferred();
             sessionApi.restoreContestSession.mockResolvedValue(old);
-            sessionApi.pollSubmissionResult.mockReturnValue(poll.promise);
+            sessionApi.pollSubmissionResults.mockReturnValue(poll.promise);
             const fresh = newSessionSnapshot();
             browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
             sessionApi.redeemAndLoadContest.mockResolvedValue(fresh);
             const controller = buildController();
 
             await controller.refreshTree({ silent: true });
-            const { signal } = sessionApi.pollSubmissionResult.mock.calls[0][0];
+            const { signal, tracker } = sessionApi.pollSubmissionResults.mock.calls[0][0];
             await controller.loginTeam();
 
             expect(signal.aborted).toBe(true);
-            poll.resolve({ id: 1, status: 'ACCEPTED', problem: { publicId: 'pa1b2c3d4e5f6' } });
+            await tracker.resolve({ id: 1, status: 'ACCEPTED', problem: { publicId: 'pa1b2c3d4e5f6' } });
+            poll.resolve();
             await flushPromises();
 
             expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(fresh);
@@ -1218,7 +1363,6 @@ describe('contest controller', () => {
         it('resumes the shown session polls when redeeming the new login fails', async () => {
             const old = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
             sessionApi.restoreContestSession.mockResolvedValue(old);
-            sessionApi.pollSubmissionResult.mockReturnValue(new Promise(() => {}));
             browserLogin.waitForHandoffCode.mockResolvedValue('used-code');
             sessionApi.redeemAndLoadContest.mockRejectedValue(apiError(400, 'HANDOFF_INVALID', 'expired'));
             const controller = buildController();
@@ -1226,8 +1370,9 @@ describe('contest controller', () => {
             await controller.refreshTree({ silent: true });
             await controller.loginTeam();
 
-            expect(sessionApi.pollSubmissionResult).toHaveBeenCalledTimes(2);
-            expect(sessionApi.pollSubmissionResult.mock.calls[1][0].signal.aborted).toBe(false);
+            expect(sessionApi.pollSubmissionResults).toHaveBeenCalledTimes(2);
+            expect(sessionApi.pollSubmissionResults.mock.calls[1][0].signal.aborted).toBe(false);
+            expect(trackedIds(1)).toEqual(['1']);
             expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(old);
         });
 
@@ -1235,7 +1380,7 @@ describe('contest controller', () => {
             const old = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
             const poll = deferred();
             sessionApi.restoreContestSession.mockResolvedValue(old);
-            sessionApi.pollSubmissionResult.mockReturnValue(poll.promise);
+            sessionApi.pollSubmissionResults.mockReturnValue(poll.promise);
             browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
             sessionApi.redeemAndLoadContest.mockResolvedValue(newSessionSnapshot());
             const controller = buildController();

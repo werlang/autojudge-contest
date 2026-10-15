@@ -1,12 +1,10 @@
 import { clearStoredSession, readStoredSession, writeStoredSession } from './session-store.js';
-import { getContestDetails, getContestProblems, getCurrentTeam, getSubmissions, isContestNotStarted, redeemHandoffCode, submitSolution as submitContestSolution } from './contest-api.js';
+import { getContestDetails, getContestProblems, getCurrentTeam, getSubmissions, isContestNotStarted, isSessionEnded, redeemHandoffCode, submitSolution as submitContestSolution } from './contest-api.js';
 import { isPendingSubmission } from '../utils/submission-status.js';
 import { resolveRouteId } from '../utils/public-id.js';
 import { getPollIntervalMs } from '../utils/config.js';
 
 export { clearStoredSession, readStoredSession, writeStoredSession };
-
-const DEFAULT_SUBMISSION_POLL_TIMEOUT_MS = 2 * 60 * 1000;
 
 /**
  * Redeem the one-time code the browser handed over, persist the resulting team
@@ -95,53 +93,60 @@ export async function submitSolution({ baseUrl, code, context, filename, problem
 }
 
 /**
- * Poll the authenticated submission history until one submission reaches a
- * final verdict, the timeout expires, or `signal` is aborted (logout,
- * session end, deactivation).
- * @param {{ baseUrl: string, context: import('vscode').ExtensionContext | { secrets: object, globalState: object }, pollIntervalMs?: number, signal?: AbortSignal, submissionId: number | string, timeoutMs?: number }} options
- * @returns {Promise<object | null>} the final submission, or null on timeout or abort
+ * Poll the authenticated submission history for a changing set of pending
+ * submissions with ONE request per interval, however many are pending. The
+ * caller owns the set through `tracker`:
+ * - `ids()` returns the ids still wanted (read before every request; the caller
+ *   drops timed-out ids there). The loop ends once it is empty.
+ * - `resolve(submission)` receives each wanted submission that reached a final verdict.
+ * - `onError(error)` reports a failed request; polling retries it next interval.
+ * A SESSION_ENDED failure is rethrown, and an aborted `signal` (logout, session
+ * end, deactivation) ends the loop and cancels the request in flight.
+ * @param {{ baseUrl: string, context: import('vscode').ExtensionContext | { secrets: object, globalState: object }, pollIntervalMs?: number, signal?: AbortSignal, tracker: { ids: () => Array<number | string>, resolve: (submission: object) => Promise<void> | void, onError?: (error: Error) => void } }} options
+ * @returns {Promise<void>}
  */
-export async function pollSubmissionResult({
+export async function pollSubmissionResults({
     baseUrl,
     context,
     pollIntervalMs = getPollIntervalMs(),
     signal,
-    submissionId,
-    timeoutMs = DEFAULT_SUBMISSION_POLL_TIMEOUT_MS,
+    tracker,
 }) {
     const session = await readStoredSession(context);
     if (!session?.token) {
         throw new Error('Log in to AutoJudge Contest before checking a submission result.');
     }
 
-    const startedAt = Date.now();
-    const normalizedSubmissionId = submissionId?.toString().trim();
-    if (!normalizedSubmissionId) {
-        throw new Error('Submission polling requires a submission id.');
-    }
-
-    while (!signal?.aborted && Date.now() - startedAt < timeoutMs) {
-        // Reuse the authenticated submissions feed so the controller updates the
-        // same explorer item shape already rendered elsewhere in the extension.
-        const submissionResponse = await getSubmissions({
-            baseUrl,
-            token: session.token,
-        });
-        const latestSubmission = (submissionResponse.submissions ?? [])
-            .find(entry => entry?.id?.toString().trim() === normalizedSubmissionId);
-
-        if (latestSubmission && !isPendingSubmission(latestSubmission.status)) {
-            return latestSubmission;
+    while (!signal?.aborted) {
+        const wanted = new Set(tracker.ids().map(id => String(id).trim()));
+        if (!wanted.size) {
+            return;
         }
 
-        if (Date.now() - startedAt + pollIntervalMs >= timeoutMs) {
-            break;
+        try {
+            const { submissions } = await getSubmissions({ baseUrl, signal, token: session.token });
+            for (const submission of submissions ?? []) {
+                const id = submission?.id?.toString().trim();
+                if (wanted.has(id) && !isPendingSubmission(submission.status)) {
+                    await tracker.resolve(submission);
+                }
+            }
+        }
+        catch (error) {
+            if (signal?.aborted) {
+                return;
+            }
+
+            if (isSessionEnded(error)) {
+                throw error;
+            }
+
+            // A network blip or server error: keep polling.
+            tracker.onError?.(error);
         }
 
         await delay(pollIntervalMs, signal);
     }
-
-    return null;
 }
 
 /**

@@ -21,6 +21,8 @@ import { ContestPageFiles, resolvePreviewRoot } from '../workspace/contest-page-
 import { TEAM_PANEL_REFRESH_INTERVAL_MS } from '../utils/config.js';
 
 const SUBMISSION_POLL_TIMEOUT_MS = 2 * 60 * 1000;
+// Wait before checking again a submission whose poll timed out while still pending.
+const SUBMISSION_POLL_BACKOFF_MS = 30 * 1000;
 const DEFAULT_POLL_INTERVAL_MS = 5000;
 // Standings refresh while the Standings view is hidden: keeps the status-bar rank fresh.
 const HIDDEN_STANDINGS_REFRESH_INTERVAL_MS = 60 * 1000;
@@ -89,7 +91,7 @@ export function logToChannel(channel, level, message) {
  * @param {() => number} [options.resolvePollIntervalMs] already normalized interval (`getPollIntervalMs`)
  * @param {() => string} options.resolveBaseUrl may throw an INVALID_SETTING error
  * @param {() => boolean} [options.resolveConfirmBeforeSubmit] reads `autojudgeContest.confirmBeforeSubmit` live (default true)
- * @param {{ clearStoredSession: Function, readStoredSession: Function, redeemAndLoadContest: Function, pollSubmissionResult: Function, refreshContestDetails: Function, restoreContestSession: Function, submitSolution: Function }} options.sessionApi
+ * @param {{ clearStoredSession: Function, readStoredSession: Function, redeemAndLoadContest: Function, pollSubmissionResults: Function, refreshContestDetails: Function, restoreContestSession: Function, submitSolution: Function }} options.sessionApi
  * @param {(key: string, value: string | boolean) => Promise<void> | void} options.setContext
  * @param {(message: string, ...optionsAndActions: unknown[]) => Promise<string | undefined> | unknown} options.showInformationMessage
  * @param {(message: string, ...optionsAndActions: unknown[]) => Promise<string | undefined> | unknown} options.showErrorMessage
@@ -149,8 +151,14 @@ export function createContestController({
     // Token of the submit currently between its start and the judge POST
     // response; a second submit is refused meanwhile so it never double-posts.
     let sendingSubmit = null;
-    // Submission id -> in-flight poll promise, so each pending submission is polled once.
+    // Submission id -> { submission, problem, deadline, userInitiated, settle, promise }:
+    // the pending set the single shared poll loop checks every interval.
     const activePolls = new Map();
+    // Promise of the running shared poll loop, or null.
+    let pollLoop = null;
+    let pollErrorMessage = null;
+    // Re-poll timers for submissions whose poll timed out while still pending.
+    const pollRetryTimers = new Set();
     let pollAbort = new AbortController();
     const viewSubscriptions = [];
 
@@ -564,11 +572,28 @@ export function createContestController({
     };
 
     /**
-     * Abort every running verdict poll (logout, session end, dispose).
+     * Abort the verdict poll loop (logout, session end, dispose): pending
+     * `trackSubmission` promises settle with their submission and scheduled
+     * re-polls are cancelled.
      */
     const stopAllPolling = () => {
         pollAbort.abort();
         pollAbort = new AbortController();
+        pollLoop = null;
+        settleAllPolls();
+        for (const timer of pollRetryTimers) {
+            clearTimeout(timer);
+        }
+        pollRetryTimers.clear();
+    };
+
+    /**
+     * Settle and forget every tracked submission with its last known state.
+     */
+    const settleAllPolls = () => {
+        for (const entry of activePolls.values()) {
+            entry.settle(entry.submission);
+        }
         activePolls.clear();
     };
 
@@ -648,11 +673,12 @@ export function createContestController({
     };
 
     /**
-     * Poll one pending submission until it gets a verdict. Each submission id
-     * is polled at most once at a time; a second call returns the same promise.
+     * Track one pending submission until it gets a verdict. Every tracked id
+     * is checked by the single shared poll loop; tracking an id twice returns
+     * the same promise.
      * @param {object} submission
      * @param {{ problem?: object, userInitiated?: boolean }} [options]
-     * @returns {Promise<object>} the final submission, or the given one on timeout or failure
+     * @returns {Promise<object>} the final submission, or the given one on timeout, failure or stop
      */
     const trackSubmission = (submission, { problem = submission?.problem, userInitiated = false } = {}) => {
         if (!isPendingSubmission(submission?.status) || submission?.id == null) {
@@ -661,70 +687,149 @@ export function createContestController({
 
         const key = String(submission.id);
         if (activePolls.has(key)) {
-            return activePolls.get(key);
+            return activePolls.get(key).promise;
         }
 
-        const { signal } = pollAbort;
-        const poll = pollUntilFinal(submission, problem, signal, userInitiated, sessionGeneration)
-            .finally(() => {
-                if (activePolls.get(key) === poll) {
-                    activePolls.delete(key);
-                }
-            });
-        activePolls.set(key, poll);
-        return poll;
+        let settle;
+        const promise = new Promise((resolve) => {
+            settle = resolve;
+        });
+        activePolls.set(key, {
+            submission,
+            problem,
+            userInitiated,
+            deadline: now() + SUBMISSION_POLL_TIMEOUT_MS,
+            settle,
+            promise,
+        });
+        ensurePollLoop();
+        return promise;
     };
 
     /**
-     * Run the verdict poll for one submission and apply the result unless the
-     * poll was aborted in the meantime.
-     * @param {object} submission
-     * @param {object} problem
-     * @param {AbortSignal} signal
-     * @param {boolean} userInitiated show an error toast when polling fails
-     * @param {number} generation session generation the poll belongs to
-     * @returns {Promise<object>}
+     * Drop tracked ids past their deadline and schedule a slower re-poll for
+     * each while the session is unchanged and it is still pending.
+     * @param {number} generation
+     * @returns {string[]} the ids still tracked
      */
-    const pollUntilFinal = async (submission, problem, signal, userInitiated, generation) => {
-        try {
-            const finalSubmission = await sessionApi.pollSubmissionResult({
-                baseUrl: resolveBaseUrl(),
-                context,
-                pollIntervalMs: resolvePollIntervalMs(),
-                signal,
-                submissionId: submission.id,
-                timeoutMs: SUBMISSION_POLL_TIMEOUT_MS,
-            });
-
-            if (signal.aborted || generation !== sessionGeneration) {
-                return submission;
+    const expireTimedOutPolls = (generation) => {
+        const currentTime = now();
+        for (const [key, entry] of activePolls) {
+            if (currentTime < entry.deadline) {
+                continue;
             }
 
-            if (!finalSubmission) {
-                log('warn', `Submission #${submission.id} is still being judged. Refresh later to see the verdict.`);
-                return submission;
-            }
+            activePolls.delete(key);
+            entry.settle(entry.submission);
+            log('warn', `Submission #${key} is still being judged. Checking again in ${SUBMISSION_POLL_BACKOFF_MS / 1000} s.`);
 
-            await mergeSubmissionIntoSnapshot(problem, finalSubmission);
-            notifyVerdict(finalSubmission.problem ? finalSubmission : { ...finalSubmission, problem });
-            return finalSubmission;
+            const timer = setTimeout(() => {
+                pollRetryTimers.delete(timer);
+                const latest = (currentSnapshot?.submissions ?? []).find(item => String(item?.id) === key);
+                if (generation === sessionGeneration && isPendingSubmission(latest?.status)) {
+                    void trackSubmission(latest, { problem: entry.problem });
+                }
+            }, SUBMISSION_POLL_BACKOFF_MS);
+            pollRetryTimers.add(timer);
         }
-        catch (error) {
-            if (signal.aborted || generation !== sessionGeneration) {
-                return submission;
-            }
 
-            if (isSessionEnded(error)) {
-                await handleSessionEnded(generation);
-                return submission;
-            }
+        return [...activePolls.keys()];
+    };
 
-            log('warn', `Stopped checking submission #${submission.id}: ${error.message}`);
-            if (userInitiated) {
-                void Promise.resolve(showErrorMessage(`Could not check submission #${submission.id}: ${error.message}`));
-            }
-            return submission;
+    /**
+     * Apply a final verdict from the poll loop: merge it, show the toast, and
+     * settle its `trackSubmission` promise.
+     * @param {object} finalSubmission
+     * @param {number} generation
+     * @returns {Promise<void>}
+     */
+    const applyPolledVerdict = async (finalSubmission, generation) => {
+        const key = String(finalSubmission.id);
+        const entry = activePolls.get(key);
+        if (!entry || generation !== sessionGeneration) {
+            return;
         }
+
+        activePolls.delete(key);
+        const { problem } = entry;
+        await mergeSubmissionIntoSnapshot(problem, finalSubmission);
+        notifyVerdict(finalSubmission.problem ? finalSubmission : { ...finalSubmission, problem });
+        entry.settle(finalSubmission);
+    };
+
+    /**
+     * Start the shared poll loop unless it already runs. Failed requests are
+     * retried by the loop; an ended session is handled globally; any other
+     * failure (no token, invalid setting) stops tracking with a log line and,
+     * for a submission the user just sent, an error toast.
+     */
+    const ensurePollLoop = () => {
+        if (pollLoop || !activePolls.size) {
+            return;
+        }
+
+        const generation = sessionGeneration;
+        const { signal } = pollAbort;
+        const isCurrent = () => !signal.aborted && generation === sessionGeneration;
+        // Ids the loop read last; only ids tracked after that need a new loop.
+        let seenIds = new Set();
+        const loop = (async () => {
+            try {
+                await sessionApi.pollSubmissionResults({
+                    baseUrl: resolveBaseUrl(),
+                    context,
+                    pollIntervalMs: resolvePollIntervalMs(),
+                    signal,
+                    tracker: {
+                        ids: () => {
+                            const ids = expireTimedOutPolls(generation);
+                            seenIds = new Set(ids);
+                            return ids;
+                        },
+                        resolve: (finalSubmission) => applyPolledVerdict(finalSubmission, generation),
+                        onError: (error) => {
+                            if (pollErrorMessage !== error.message) {
+                                pollErrorMessage = error.message;
+                                log('warn', `Checking submissions failed, retrying: ${error.message}`);
+                            }
+                        },
+                    },
+                });
+                pollErrorMessage = null;
+            }
+            catch (error) {
+                if (!isCurrent()) {
+                    return;
+                }
+
+                if (isSessionEnded(error)) {
+                    await handleSessionEnded(generation);
+                    return;
+                }
+
+                const ids = [...activePolls.keys()];
+                log('warn', `Stopped checking submissions ${ids.map(id => `#${id}`).join(', ')}: ${error.message}`);
+                for (const entry of activePolls.values()) {
+                    if (entry.userInitiated) {
+                        void Promise.resolve(showErrorMessage(`Could not check submission #${entry.submission.id}: ${error.message}`));
+                    }
+                }
+                settleAllPolls();
+            }
+        })();
+
+        pollLoop = loop;
+        void loop.finally(() => {
+            if (pollLoop !== loop) {
+                return;
+            }
+
+            pollLoop = null;
+            // Ids tracked after the loop's last read get a fresh loop.
+            if (isCurrent() && [...activePolls.keys()].some(id => !seenIds.has(id))) {
+                ensurePollLoop();
+            }
+        });
     };
 
     /**
