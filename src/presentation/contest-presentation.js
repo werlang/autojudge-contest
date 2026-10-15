@@ -2,7 +2,7 @@ import { isPassedSubmission, isPendingSubmission } from '../utils/submission-sta
 import { countSolvedProblems, normalizeStandingScore, resolveStandingTeams } from '../utils/standings.js';
 import { resolveRouteId, sameEntity, sameTeam } from '../utils/public-id.js';
 import { formatDuration, formatLocalDateTime, formatMinutes, formatRelativeTime } from '../utils/time-format.js';
-import { getContestTiming, getProblemLetter, sortProblems, summarizeProblemSubmissions } from '../utils/contest-progress.js';
+import { getContestDurationMinutes, getContestTiming, getProblemLetter, sortProblems, summarizeProblemSubmissions } from '../utils/contest-progress.js';
 import { extractPublicCases } from '../workspace/contest-public-cases.js';
 
 /*
@@ -220,11 +220,11 @@ export function renderTeamStandingDetails(team, snapshot) {
 export function renderContestDashboard(contest, { team, problems } = {}, now = Date.now()) {
     const timing = getContestTiming(contest, now);
     const phase = CONTEST_PHASE_LABELS[timing.phase];
-    const durationMinutes = Number(contest?.duration);
+    const durationMinutes = getContestDurationMinutes(contest);
     const problemCount = (contest?.problems ?? problems ?? []).length;
     // A scheduled (future) contest has no endTime from getContestTiming yet,
     // but its end is still known from the start and duration.
-    const endTime = timing.endTime ?? (timing.startTime && Number.isFinite(durationMinutes)
+    const endTime = timing.endTime ?? (timing.startTime && durationMinutes != null
         ? new Date(timing.startTime.getTime() + durationMinutes * MINUTE_MS)
         : null);
     const standings = Array.isArray(contest?.teams) ? resolveStandingTeams(contest) : [];
@@ -247,7 +247,7 @@ export function renderContestDashboard(contest, { team, problems } = {}, now = D
             ['Start', timing.startTime ? formatLocalDateTime(timing.startTime) : 'Not started'],
             ['End', endTime ? formatLocalDateTime(endTime) : (timing.startTime ? '' : 'Not started')],
             ['Remaining (when opened)', remaining],
-            ['Duration', Number.isFinite(durationMinutes) ? formatDuration(durationMinutes * MINUTE_MS) : ''],
+            ['Duration', durationMinutes != null ? formatDuration(durationMinutes * MINUTE_MS) : ''],
             ['Penalty per wrong answer', formatMinutesField(contest?.penaltyTime)],
             ['Scoreboard freeze', formatFreeze(contest)],
             ['Problems', String(problemCount)],

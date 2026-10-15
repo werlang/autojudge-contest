@@ -4,8 +4,26 @@ import { isPassedSubmission, isPendingSubmission } from './submission-status.js'
 const MINUTE_MS = 60 * 1000;
 
 /**
+ * Read a contest's duration in minutes. Missing, blank, non-numeric and
+ * non-finite values are unknown (`null`), never 0.
+ * @param {{ duration?: unknown } | undefined | null} contest
+ * @returns {number | null}
+ */
+export function getContestDurationMinutes(contest) {
+    const raw = contest?.duration;
+    if (raw == null || (typeof raw === 'string' && !raw.trim())) {
+        return null;
+    }
+
+    const minutes = Number(raw);
+    return Number.isFinite(minutes) ? minutes : null;
+}
+
+/**
  * Work out where a contest is in its time window. A contest without a valid
- * `startTime` has not started; the end is `startTime + duration` minutes.
+ * `startTime` has not started; the end is `startTime + duration` minutes. An
+ * unknown or unrepresentable duration leaves a started contest running with no
+ * end time.
  * @param {{ startTime?: string | null, duration?: number } | undefined | null} contest
  * @param {number} [now=Date.now()]
  * @returns {{ phase: 'notStarted' | 'running' | 'ended', startTime: Date | null, endTime: Date | null, remainingMs: number | null }}
@@ -21,12 +39,12 @@ export function getContestTiming(contest, now = Date.now()) {
         };
     }
 
-    const durationMinutes = Number(contest?.duration);
-    if (!Number.isFinite(durationMinutes)) {
+    const durationMinutes = getContestDurationMinutes(contest);
+    const endTime = durationMinutes == null ? null : new Date(startTime.getTime() + durationMinutes * MINUTE_MS);
+    if (!endTime || Number.isNaN(endTime.getTime())) {
         return { phase: 'running', startTime, endTime: null, remainingMs: null };
     }
 
-    const endTime = new Date(startTime.getTime() + durationMinutes * MINUTE_MS);
     const remainingMs = endTime.getTime() - now;
 
     return {
@@ -38,14 +56,31 @@ export function getContestTiming(contest, now = Date.now()) {
 }
 
 /**
- * Sort contest problems by `order`, keeping problems without an order last.
+ * Sort contest problems by `order`, keeping problems without a usable (finite
+ * numeric) order last, in their original relative order.
  * @param {object[] | undefined | null} problems
  * @returns {object[]}
  */
 export function sortProblems(problems) {
     return (Array.isArray(problems) ? problems : [])
         .slice()
-        .sort((left, right) => (left?.order ?? Number.MAX_SAFE_INTEGER) - (right?.order ?? Number.MAX_SAFE_INTEGER));
+        .sort((left, right) => toOrderKey(left) - toOrderKey(right));
+}
+
+/**
+ * Convert a problem's `order` to a sortable number; missing or non-numeric
+ * values sort last.
+ * @param {{ order?: unknown } | null | undefined} problem
+ * @returns {number}
+ */
+function toOrderKey(problem) {
+    const raw = problem?.order;
+    if (raw == null || (typeof raw === 'string' && !raw.trim())) {
+        return Number.MAX_SAFE_INTEGER;
+    }
+
+    const order = Number(raw);
+    return Number.isFinite(order) ? order : Number.MAX_SAFE_INTEGER;
 }
 
 /**

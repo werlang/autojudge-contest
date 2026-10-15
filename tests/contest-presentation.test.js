@@ -228,6 +228,15 @@ describe('renderContestDashboard', () => {
         expect(page).not.toContain('Penalty per wrong answer');
     });
 
+    it('omits end and duration instead of claiming 0 minutes when the duration is unknown', () => {
+        const page = renderContestDashboard({ ...CONTEST, duration: null }, {}, start + 60 * 1000);
+
+        expect(page).toContain('- **Phase:** Running');
+        expect(page).not.toContain('**Duration:**');
+        expect(page).not.toContain('**End:**');
+        expect(page).not.toContain('Invalid');
+    });
+
     it('shows the scheduled end of a contest that starts later', () => {
         const page = renderContestDashboard(CONTEST, {}, start - 60 * 60 * 1000);
 

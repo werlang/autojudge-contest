@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formatDuration, formatLocalDateTime, formatMinutes, formatRelativeTime } from '../src/utils/time-format.js';
-import { getContestTiming, getProblemLetter, sortProblems, summarizeProblemSubmissions } from '../src/utils/contest-progress.js';
+import { getContestDurationMinutes, getContestTiming, getProblemLetter, sortProblems, summarizeProblemSubmissions } from '../src/utils/contest-progress.js';
 
 describe('time formatting', () => {
     it('formats minutes with at most one decimal', () => {
@@ -38,6 +38,48 @@ describe('contest progress', () => {
         expect(running.phase).toBe('running');
         expect(running.remainingMs).toBe(120 * 60000);
         expect(getContestTiming({ startTime: '2026-06-03T08:00:00Z', duration: 60 }, now)).toMatchObject({ phase: 'ended', remainingMs: 0 });
+    });
+
+    it('treats the exact start as running and the exact end as ended', () => {
+        const contest = { startTime: '2026-06-03T12:00:00Z', duration: 60 };
+
+        expect(getContestTiming(contest, now)).toMatchObject({ phase: 'running', remainingMs: 60 * 60000 });
+        expect(getContestTiming(contest, now - 1).phase).toBe('notStarted');
+        expect(getContestTiming(contest, now + 60 * 60000 - 1)).toMatchObject({ phase: 'running', remainingMs: 1 });
+        expect(getContestTiming(contest, now + 60 * 60000)).toMatchObject({ phase: 'ended', remainingMs: 0 });
+    });
+
+    it('reports an invalid start time as not started with no times', () => {
+        expect(getContestTiming({ startTime: 'not-a-date', duration: 60 }, now)).toEqual({
+            phase: 'notStarted',
+            startTime: null,
+            endTime: null,
+            remainingMs: null,
+        });
+    });
+
+    it('keeps a started contest running when the duration is unknown or unrepresentable', () => {
+        const unknown = { phase: 'running', endTime: null, remainingMs: null };
+
+        for (const duration of ['abc', undefined, null, '', '   ', Infinity, 1e12]) {
+            expect(getContestTiming({ startTime: '2026-06-03T11:00:00Z', duration }, now), String(duration)).toMatchObject(unknown);
+        }
+        expect(getContestDurationMinutes({ duration: 0 })).toBe(0);
+        expect(getContestDurationMinutes({ duration: '90' })).toBe(90);
+        expect(getContestDurationMinutes({ duration: null })).toBeNull();
+    });
+
+    it('sorts problems with a missing or non-numeric order last, keeping their relative order', () => {
+        const problems = [
+            { publicId: 'x', order: 'abc' },
+            { publicId: 'b', order: 2 },
+            { publicId: 'y', order: null },
+            { publicId: 'a', order: '1' },
+            { publicId: 'z' },
+            { publicId: 'w', order: '' },
+        ];
+
+        expect(sortProblems(problems).map(problem => problem.publicId)).toEqual(['a', 'b', 'x', 'y', 'z', 'w']);
     });
 
     it('assigns letters by problem order', () => {
