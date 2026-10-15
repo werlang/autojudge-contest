@@ -52,25 +52,6 @@ export function formatSubmissionStatus(status) {
 }
 
 /**
- * Build the explorer contest header description with the current team.
- * @param {{ name?: string } | undefined | null} team
- * @returns {string}
- */
-export function buildContestHeaderDescription(team) {
-    return team?.name?.toString().trim() || 'Unknown Team';
-}
-
-/**
- * Format a time score or penalty in milliseconds as minutes.
- * @deprecated Use `formatMinutes` from `src/utils/time-format.js`.
- * @param {number} ms
- * @returns {string}
- */
-export function formatProblemScore(ms) {
-    return formatMinutes(ms);
-}
-
-/**
  * Render the problem page: `# A. Title`, the team's progress on it, the
  * statement, and the public test cases numbered from 1 (matching the exported
  * testcase files).
@@ -212,9 +193,8 @@ export function renderTeamStandingDetails(team, snapshot) {
  * Render the "Contest Overview" page: phase, local start and end, remaining
  * time when the page was generated, rules, counts, and the team's position.
  * @param {object} contest
- * @param {{ team?: object, submissions?: object[], problems?: object[] }} [options]
+ * @param {{ team?: object, problems?: object[] }} [options]
  * @param {object} [options.team] the signed-in team, for its rank and solved count
- * @param {object[]} [options.submissions] the team's submissions (accepted for API symmetry; not shown yet)
  * @param {object[]} [options.problems] contest problems when the contest payload lacks them
  * @param {number} [now=Date.now()]
  * @returns {string}

@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-    buildContestHeaderDescription,
-    formatProblemScore,
     formatSubmissionStatus,
     getContestPageName,
     getProblemPageName,
@@ -295,8 +293,5 @@ describe('kept helpers', () => {
     it('keeps the explorer and output helpers stable', () => {
         expect(formatSubmissionStatus('WRONG_ANSWER')).toBe('Wrong Answer');
         expect(formatSubmissionStatus(null)).toBe('Unknown');
-        expect(buildContestHeaderDescription({ name: ' Bits ' })).toBe('Bits');
-        expect(buildContestHeaderDescription(null)).toBe('Unknown Team');
-        expect(formatProblemScore(1200000)).toBe('20 min');
     });
 });
