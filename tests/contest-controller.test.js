@@ -531,7 +531,7 @@ describe('contest controller', () => {
         });
         expect(fsState.writeFile).toHaveBeenCalledWith(
             '/workspace/.autojudge-state/contest-dashboards/contest-k3m9x2p7q8w1a.md',
-            expect.stringContaining('# 🏆 Contest Dashboard: Regional Final'),
+            expect.stringContaining('# Contest Overview · Regional Final'),
             { encoding: 'utf-8' }
         );
         expect(openTextDocument).toHaveBeenCalledWith('/workspace/.autojudge-state/contest-dashboards/contest-k3m9x2p7q8w1a.md');
@@ -555,9 +555,9 @@ describe('contest controller', () => {
         });
 
         const dashboard = fsState.writeFile.mock.calls.at(-1)[1];
-        expect(dashboard).toContain('| **📅 Start Time** | Not started |');
-        expect(dashboard).toContain('| **🏁 End Time** | Not started |');
-        expect(dashboard).toContain('| **⏳ Remaining Time** | **Not started** |');
+        expect(dashboard).toContain('- **Start:** Not started');
+        expect(dashboard).toContain('- **End:** Not started');
+        expect(dashboard).toContain('- **Remaining (when opened):** Not started');
         expect(dashboard).not.toContain('1970');
         expect(dashboard).not.toContain('Ended');
     });
@@ -601,7 +601,7 @@ describe('contest controller', () => {
         });
         expect(fsState.writeFile).toHaveBeenCalledWith(
             '/workspace/.autojudge-state/submission-details/submission-12.md',
-            expect.stringContaining('# 📝 Submission #12'),
+            expect.stringContaining('# Submission 12'),
             { encoding: 'utf-8' }
         );
         expect(openTextDocument).toHaveBeenCalledWith('/workspace/.autojudge-state/submission-details/submission-12.md');
@@ -643,7 +643,7 @@ describe('contest controller', () => {
         });
         expect(fsState.writeFile).toHaveBeenCalledWith(
             '/workspace/.autojudge-state/team-details/team-tninjas7f3a00.md',
-            expect.stringContaining('# 👥 Team Standing: Array Ninjas'),
+            expect.stringContaining('# Array Ninjas'),
             { encoding: 'utf-8' }
         );
         expect(openTextDocument).toHaveBeenCalledWith('/workspace/.autojudge-state/team-details/team-tninjas7f3a00.md');
@@ -684,10 +684,10 @@ describe('contest controller', () => {
             { encoding: 'utf-8' }
         );
         const [, content] = fsState.writeFile.mock.calls[0];
-        expect(content).toContain('| **🏆 Rank** | **#2** |');
-        expect(content).toContain('| **✅ Solved Problems** | 1 / 2 |');
-        expect(content).toContain('> - A + B');
-        expect(content).not.toContain('> - Binary Search');
+        expect(content).toContain('- **Rank:** #2 of 2');
+        expect(content).toContain('- **Solved:** 1 of 2');
+        expect(content).toContain('- A. A + B');
+        expect(content).not.toContain('B. Binary Search');
     });
 
     it('submits the active file for the selected problem and refreshes the in-memory snapshot', async () => {
@@ -1123,7 +1123,7 @@ describe('contest controller', () => {
             name: 'Regional Final (live)',
             teams: [
                 ninjas,
-                { ...bits, score: 360000, solvedProblemIds: ['pa1b2c3d4e5f6', 'pb2c3d4e5f6a1'] },
+                { ...bits, score: 300000, solvedProblemIds: ['pa1b2c3d4e5f6', 'pb2c3d4e5f6a1'] },
             ],
         };
         browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
@@ -1164,7 +1164,7 @@ describe('contest controller', () => {
             contest: liveContest,
         }));
 
-        // Bits now leads the refreshed standings, so Array Ninjas drops to #2 in the preview.
+        // Bits now leads the refreshed standings (same solved count, less total time), so Array Ninjas drops to #2.
         await controller.openTeamStanding(liveContest.teams[0]);
         expect(fsState.writeFile).toHaveBeenLastCalledWith(
             '/workspace/.autojudge-state/team-details/team-tninjas7f3a00.md',
@@ -1172,8 +1172,8 @@ describe('contest controller', () => {
             { encoding: 'utf-8' }
         );
         const [, content] = fsState.writeFile.mock.calls.at(-1);
-        expect(content).toContain('| **🏆 Rank** | **#2** |');
-        expect(content).toContain('| **✅ Solved Problems** | 2 / 2 |');
+        expect(content).toContain('- **Rank:** #2 of 2');
+        expect(content).toContain('- **Solved:** 2 of 2');
 
         controller.dispose();
         vi.useRealTimers();

@@ -2,10 +2,10 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CONTEXT_KEYS } from '../constants.js';
 import {
-    buildProblemPreview,
     formatProblemScore,
     formatSubmissionStatus,
     renderContestDashboard,
+    renderProblemPage,
     renderSubmissionDetails,
     renderTeamStandingDetails,
 } from '../presentation/contest-presentation.js';
@@ -404,7 +404,11 @@ export function createContestController({
             }
 
             try {
-                const dashboardPath = await ensureContestDashboardFile(context, selectedContest);
+                const dashboardPath = await ensureContestDashboardFile(context, selectedContest, {
+                    team: currentSnapshot?.team,
+                    submissions: currentSnapshot?.submissions,
+                    problems: currentSnapshot?.problems,
+                });
                 const document = await openTextDocument(dashboardPath);
 
                 await executeCommand('markdown.showPreview', document.uri, {
@@ -430,7 +434,10 @@ export function createContestController({
             }
 
             try {
-                const problemPreviewPath = await ensureProblemPreviewFile(context, selectedProblem);
+                const problemPreviewPath = await ensureProblemPreviewFile(context, selectedProblem, {
+                    problems: currentSnapshot?.problems,
+                    submissions: currentSnapshot?.submissions,
+                });
                 const document = await openTextDocument(problemPreviewPath);
 
                 // Use the built-in Markdown viewer so the statement renders as
@@ -459,7 +466,9 @@ export function createContestController({
             }
 
             try {
-                const submissionPath = await ensureSubmissionDetailFile(context, selectedSubmission);
+                const submissionPath = await ensureSubmissionDetailFile(context, selectedSubmission, {
+                    problems: currentSnapshot?.problems,
+                });
                 const document = await openTextDocument(submissionPath);
 
                 await executeCommand('markdown.showPreview', document.uri, {
@@ -615,76 +624,20 @@ function encodeSourceCode(sourceCode) {
  * missing and return its stable path.
  * @param {object} context
  * @param {{ publicId?: string, title?: string }} problem
+ * @param {{ problems?: object[], submissions?: object[] }} [pageOptions] forwarded to `renderProblemPage`
  * @returns {Promise<string>}
  */
-async function ensureProblemPreviewFile(context, problem) {
+async function ensureProblemPreviewFile(context, problem, pageOptions) {
     const previewDirectory = join(resolvePreviewRoot(context), 'problem-previews');
     const previewPath = join(previewDirectory, `${toProblemArtifactName(problem)}.md`);
 
     await mkdir(previewDirectory, { recursive: true });
 
-    await writeFile(previewPath, buildProblemPreviewDocument(problem), {
+    await writeFile(previewPath, renderProblemPage(problem, pageOptions), {
         encoding: 'utf-8',
     });
 
     return previewPath;
-}
-
-/**
- * Build the complete markdown preview, including a public cases table when
- * sample input/output pairs are available.
- * @param {object} problem
- * @returns {string}
- */
-function buildProblemPreviewDocument(problem) {
-    const preview = buildProblemPreview(problem);
-    const publicCasesTable = buildProblemPublicCasesTable(problem);
-
-    if (!publicCasesTable) {
-        return preview;
-    }
-
-    return `${preview.trimEnd()}\n\n${publicCasesTable}\n`;
-}
-
-/**
- * Render the extracted public input/output pairs as a markdown table.
- * @param {object} problem
- * @returns {string}
- */
-function buildProblemPublicCasesTable(problem) {
-    const publicCases = extractPublicCases(problem);
-    if (!publicCases.length) {
-        return '';
-    }
-
-    const rows = publicCases.map((testCase, index) => {
-        const input = formatMarkdownTableCell(testCase?.input ?? '');
-        const output = formatMarkdownTableCell(testCase?.output ?? '');
-        return `| ${index + 1} | ${input} | ${output} |`;
-    });
-
-    return [
-        '## Public Cases',
-        '',
-        '| Case | Input | Output |',
-        '| --- | --- | --- |',
-        ...rows,
-    ].join('\n');
-}
-
-/**
- * Format multiline text so it remains readable inside a markdown table cell.
- * @param {unknown} value
- * @returns {string}
- */
-function formatMarkdownTableCell(value) {
-    return String(value ?? '')
-        .replace(/\r\n/g, '\n')
-        .replace(/\r/g, '\n')
-        .split('\n')
-        .map(line => line.replace(/\|/g, '\\|'))
-        .join('<br>');
 }
 
 /**
@@ -725,15 +678,16 @@ function toProblemArtifactName(problem) {
  * Create the generated markdown dashboard file for a contest and return its path.
  * @param {object} context
  * @param {object} contest
+ * @param {{ team?: object, submissions?: object[], problems?: object[] }} [pageOptions] forwarded to `renderContestDashboard`
  * @returns {Promise<string>}
  */
-async function ensureContestDashboardFile(context, contest) {
+async function ensureContestDashboardFile(context, contest, pageOptions) {
     const previewDirectory = join(resolvePreviewRoot(context), 'contest-dashboards');
     const previewPath = join(previewDirectory, `contest-${resolveRouteId(contest) ?? 'unknown'}.md`);
 
     await mkdir(previewDirectory, { recursive: true });
 
-    await writeFile(previewPath, renderContestDashboard(contest), {
+    await writeFile(previewPath, renderContestDashboard(contest, pageOptions), {
         encoding: 'utf-8',
     });
 
@@ -744,15 +698,16 @@ async function ensureContestDashboardFile(context, contest) {
  * Create the generated markdown submission detail file and return its path.
  * @param {object} context
  * @param {object} submission
+ * @param {{ problems?: object[] }} [pageOptions] forwarded to `renderSubmissionDetails`
  * @returns {Promise<string>}
  */
-async function ensureSubmissionDetailFile(context, submission) {
+async function ensureSubmissionDetailFile(context, submission, pageOptions) {
     const previewDirectory = join(resolvePreviewRoot(context), 'submission-details');
     const previewPath = join(previewDirectory, `submission-${submission.id}.md`);
 
     await mkdir(previewDirectory, { recursive: true });
 
-    await writeFile(previewPath, renderSubmissionDetails(submission), {
+    await writeFile(previewPath, renderSubmissionDetails(submission, pageOptions), {
         encoding: 'utf-8',
     });
 

@@ -1,29 +1,33 @@
-import { isPassedSubmission, isPendingSubmission, isTimeLimitSubmission } from '../utils/submission-status.js';
-import { extractSolvedProblemNames, normalizeStandingScore, resolveStandingTeams } from '../utils/standings.js';
-import { sameTeam } from '../utils/public-id.js';
+import { isPassedSubmission, isPendingSubmission } from '../utils/submission-status.js';
+import { countSolvedProblems, normalizeStandingScore, resolveStandingTeams } from '../utils/standings.js';
+import { resolveRouteId, sameEntity, sameTeam } from '../utils/public-id.js';
+import { formatDuration, formatLocalDateTime, formatMinutes, formatRelativeTime } from '../utils/time-format.js';
+import { getContestTiming, getProblemLetter, sortProblems, summarizeProblemSubmissions } from '../utils/contest-progress.js';
+import { extractPublicCases } from '../workspace/contest-public-cases.js';
 
-
-/**
- * Build the markdown preview shown when a contest problem is opened from the
- * explorer without requiring a second VS Code view surface.
- * @param {object} problem
- * @returns {string}
+/*
+ * Page layout shared by every generated Markdown page (problem, submission,
+ * team standing, contest overview), so contestants scan them the same way:
+ *
+ *   # Title
+ *
+ *   One-line summary sentence.
+ *
+ *   - **Label:** value          <- definition-style field list (no tables, so
+ *   - **Label:** value             team names with `|` cannot break the layout)
+ *
+ *   ## Section                   <- optional sections (statement, hint, cases)
+ *
+ * Fields whose value is missing are omitted instead of rendering `undefined`.
  */
-export function buildProblemPreview(problem) {
-    const lines = [
-        `# ${getProblemTitle(problem)}`,
-    ];
 
-    const statement = getProblemStatement(problem);
-    if (statement) {
-        lines.push('', statement.trim());
-    }
-    else {
-        lines.push('', 'Problem statement details were not included in the current contest snapshot.');
-    }
-
-    return lines.join('\n');
-}
+const MINUTE_MS = 60 * 1000;
+const MAX_FILE_NAME_LENGTH = 80;
+const CONTEST_PHASE_LABELS = {
+    notStarted: 'Not started',
+    running: 'Running',
+    ended: 'Ended',
+};
 
 /**
  * Return a readable status label for explorer descriptions and output messages.
@@ -46,78 +50,6 @@ export function formatSubmissionStatus(status) {
 }
 
 /**
- * Render the full submission payload in a readable output-channel block.
- * @param {object} submission
- * @returns {string}
- */
-export function renderSubmissionDetails(submission) {
-    const statusEmoji = getStatusEmoji(submission.status);
-    const statusText = formatSubmissionStatus(submission.status);
-
-    const lines = [
-        `# 📝 Submission #${submission.id ?? 'Unknown'}`,
-        '',
-        `| **Status** | ${statusEmoji} **${statusText}** |`,
-        `| :--- | :--- |`,
-    ];
-
-    const problemLabel = buildSubmissionProblemLabel(submission?.problem);
-    if (problemLabel) {
-        lines.push(`| **🧩 Problem** | ${problemLabel} |`);
-    }
-
-    if (submission?.submittedAt) {
-        lines.push(`| **⏰ Submitted At** | \`${submission.submittedAt}\` |`);
-    }
-
-    let scoreLabel = 'Time';
-    if (!isPassedSubmission(submission?.status)) {
-        scoreLabel = 'Penalty';
-    }
-    if (submission?.score != null) {
-        lines.push(`| **⏱️ ${scoreLabel}** | ${formatProblemScore(submission.score)} |`);
-    }
-
-    if (submission?.hint) {
-        const { message, expected, received } = submission.hint;
-        if (message) {
-            lines.push('', '---', '', '### 💡 Hint');
-            const hintMessage = message?.toString().trim();
-            if (hintMessage) {
-                lines.push('', '```', hintMessage.replace(/\n/g, '\n'), '```');
-            }
-        }
-
-        if (expected != null || received != null) {
-            lines.push('', '### 🔎 Expected vs Received');
-            if (expected != null) {
-                lines.push('', '**Expected Output:**', '```', expected.toString().trim(), '```');
-            }
-            if (received != null) {
-                lines.push('', '**Received Output:**', '```', received.toString().trim(), '```');
-            }
-        }
-    }
-
-    return lines.join('\n');
-}
-
-/**
- * Return status emoji based on status value.
- * @param {string | undefined | null} status
- * @returns {string}
- */
-function getStatusEmoji(status) {
-    if (isPassedSubmission(status)) {
-        return '🟢';
-    }
-    if (isPendingSubmission(status) || isTimeLimitSubmission(status)) {
-        return '🟡';
-    }
-    return '🔴';
-}
-
-/**
  * Build the explorer contest header description with the current team.
  * @param {{ name?: string } | undefined | null} team
  * @returns {string}
@@ -127,108 +59,425 @@ export function buildContestHeaderDescription(team) {
 }
 
 /**
- * Format problem score from milliseconds as a minute string.
- * @param {number} ms 
+ * Format a time score or penalty in milliseconds as minutes.
+ * @deprecated Use `formatMinutes` from `src/utils/time-format.js`.
+ * @param {number} ms
  * @returns {string}
  */
 export function formatProblemScore(ms) {
-    const totalSeconds = Math.ceil(ms / 1000);
-    const minutes = (totalSeconds / 60).toFixed(1);
-    return `${minutes} min`;
+    return formatMinutes(ms);
 }
 
 /**
- * Render the contest dashboard as a Markdown metrics table. A contest without a
- * start time has not started: its end and remaining time are shown as not started
- * rather than computed from `new Date(null)` (1970) or reported as ended.
- * @param {object} contest
+ * Render the problem page: `# A. Title`, the team's progress on it, the
+ * statement, and the public test cases numbered from 1 (matching the exported
+ * testcase files).
+ * @param {object} problem
+ * @param {{ problems?: object[], submissions?: object[] }} [options]
+ * @param {object[]} [options.problems] all contest problems, used for the letter
+ * @param {object[]} [options.submissions] the team's own submissions
  * @returns {string}
  */
-export function renderContestDashboard(contest) {
-    const hasStarted = Boolean(contest.startTime);
-    const startTime = hasStarted ? `\`${contest.startTime}\`` : 'Not started';
-    let endTime = 'Not started';
-    let remainingTime = 'Not started';
+export function renderProblemPage(problem, { problems = [], submissions = [] } = {}) {
+    const lines = [
+        `# ${getProblemPageName(problem, problems)}`,
+        '',
+        describeProblemProgress(problem, submissions),
+        '',
+    ];
 
-    if (hasStarted) {
-        const endTimestamp = new Date(contest.startTime).getTime() + contest.duration * 60 * 1000;
-        const remainingMs = endTimestamp - Date.now();
-        endTime = `\`${new Date(endTimestamp).toISOString()}\``;
-        remainingTime = remainingMs > 0 ? formatProblemScore(remainingMs) : 'Ended';
+    const statement = getProblemStatement(problem);
+    lines.push(statement ? statement.trim() : '*The statement is not available in the current contest data.*');
+
+    const casesTable = buildPublicCasesTable(problem);
+    if (casesTable) {
+        lines.push('', casesTable);
     }
 
-    const lines = [
-        `# 🏆 Contest ${contest.name.trim()}`,
-        '',
-        `| **Metric** | **Value** |`,
-        `| :--- | :--- |`,
-        `| **📅 Start Time** | ${startTime} |`,
-        `| **🏁 End Time** | ${endTime} |`,
-        `| **⏳ Remaining Time** | **${remainingTime}** |`,
-        `| **⏱️ Duration** | ${contest.duration} minutes |`,
-        `| **⚠️ Penalty Time** | ${contest.penaltyTime} minutes |`,
-        `| **❄️ Freeze Time** | ${contest.freezeTime} minutes |`,
-        `| **🥶 Frozen Scoreboard** | ${contest.frozenScoreboard ? 'Yes ❄️' : 'No'} |`,
-        `| **📚 Problems Count** | ${contest.problems?.length ?? 0} |`,
-        `| **👥 Teams Count** | ${contest.teams?.length ?? 0} |`,
-    ];
-
-    return lines.join('\n');
+    return `${lines.join('\n')}\n`;
 }
 
 /**
- * Render details of a team's standing and solved problems in Markdown.
- * @param {object} team
- * @param {object | null} currentSnapshot
+ * Render one submission: verdict, problem, local submit time, time or penalty,
+ * file details, judge hint, and expected versus received output.
+ * @param {object} submission
+ * @param {{ problems?: object[] }} [options]
+ * @param {object[]} [options.problems] all contest problems, used for the letter
  * @returns {string}
  */
-export function renderTeamStandingDetails(team, currentSnapshot) {
-    const sortedTeams = currentSnapshot?.contest ? resolveStandingTeams(currentSnapshot.contest) : [];
-    const teamIndex = sortedTeams.findIndex(entry => sameTeam(entry, team));
-    const rank = teamIndex !== -1 ? teamIndex + 1 : 'Unknown';
-
-    const normalizedScore = formatProblemScore(normalizeStandingScore(team));
-    const contestProblems = currentSnapshot?.contest?.problems ?? [];
-    const solvedProblemNames = extractSolvedProblemNames(team, contestProblems);
+export function renderSubmissionDetails(submission, { problems = [] } = {}) {
+    const verdict = formatSubmissionStatus(submission?.status);
+    const problemLabel = formatSubmissionProblemLabel(submission?.problem, problems);
+    const relative = formatRelativeTime(submission?.submittedAt);
 
     const lines = [
-        `# 👥 Team Standing: ${team.name}`,
+        `# ${getSubmissionHeading(submission)}`,
         '',
-        `| **Metric** | **Value** |`,
-        `| :--- | :--- |`,
-        `| **🏆 Rank** | **#${rank}** |`,
-        `| **⏱️ Time** | \`${normalizedScore}\` |`,
-        `| **✅ Solved Problems** | ${solvedProblemNames.length} / ${contestProblems.length} |`,
-        '',
-        `### 🧩 Solved Problems List`,
+        describeSubmission(submission, verdict, problemLabel),
         '',
     ];
 
-    if (solvedProblemNames.length) {
-        for (const problemName of solvedProblemNames) {
-            lines.push(`> - ${problemName} `);
+    const submittedAt = submission?.submittedAt
+        ? `${formatLocalDateTime(submission.submittedAt)}${relative ? ` (${relative})` : ''}`
+        : '';
+
+    lines.push(...renderFields([
+        ['Verdict', verdict],
+        ['Problem', problemLabel],
+        ['Submitted', submittedAt],
+        [isPassedSubmission(submission?.status) ? 'Time' : 'Penalty', formatOptionalMinutes(submission?.score)],
+        ['File', submission?.filename ?? submission?.fileName],
+        ['Language', submission?.language],
+    ]));
+
+    const hint = submission?.hint ?? {};
+    const hintMessage = toText(hint.message);
+    if (hintMessage) {
+        lines.push('', '## Hint', '', fence(hintMessage));
+    }
+
+    const hasExpected = hint.expected != null;
+    const hasReceived = hint.received != null;
+    if (hasExpected || hasReceived) {
+        lines.push('', '## Expected vs received output');
+        if (hasExpected && hasReceived) {
+            lines.push('', 'For a side-by-side diff, right-click the submission in Contest Explorer and choose **Compare Expected and Received Output**.');
         }
-    } else {
+        if (hasExpected) {
+            lines.push('', '### Expected', '', fence(String(hint.expected).trimEnd()));
+        }
+        if (hasReceived) {
+            lines.push('', '### Received', '', fence(String(hint.received).trimEnd()));
+        }
+    }
+
+    return `${lines.join('\n')}\n`;
+}
+
+/**
+ * Render one team's standing: rank, solved count, total time, and the solved
+ * problems as a lettered list.
+ * @param {object} team
+ * @param {{ contest?: object, problems?: object[] } | null | undefined} snapshot
+ * @returns {string}
+ */
+export function renderTeamStandingDetails(team, snapshot) {
+    const contest = snapshot?.contest;
+    const standings = contest ? resolveStandingTeams(contest) : [];
+    const index = standings.findIndex(entry => sameTeam(entry, team));
+    const standing = index === -1 ? team : standings[index];
+    const rank = index === -1 ? null : standing.rank ?? index + 1;
+
+    const problems = sortProblems(contest?.problems ?? snapshot?.problems);
+    const solvedIds = Array.isArray(standing?.solvedProblemIds) ? standing.solvedProblemIds : [];
+    const solvedProblems = problems.filter(problem => solvedIds.includes(resolveRouteId(problem)));
+    const solvedCount = solvedProblems.length || countSolvedProblems(standing);
+    const totalTime = formatMinutes(normalizeStandingScore(standing));
+    const name = getTeamPageName(team);
+
+    const summary = rank == null
+        ? `${name} is not in the current standings.`
+        : `${name} is ranked #${rank} with ${pluralize(solvedCount, 'problem')} solved.`;
+
+    const lines = [
+        `# ${name}`,
+        '',
+        summary,
+        '',
+        ...renderFields([
+            ['Rank', rank == null ? '—' : `#${rank} of ${standings.length}`],
+            ['Solved', problems.length ? `${solvedCount} of ${problems.length}` : String(solvedCount)],
+            ['Total time', totalTime],
+        ]),
+        '',
+        '## Solved problems',
+        '',
+    ];
+
+    if (solvedProblems.length) {
+        for (const problem of solvedProblems) {
+            lines.push(`- ${formatProblemLabel(problem, problems)}`);
+        }
+    }
+    else {
         lines.push('*This team has not solved any problems yet.*');
     }
 
-    return lines.join('\n');
+    return `${lines.join('\n')}\n`;
 }
 
 /**
- * Return the best available problem title while guarding against blank API data.
- * @param {object} problem
+ * Render the "Contest Overview" page: phase, local start and end, remaining
+ * time when the page was generated, rules, counts, and the team's position.
+ * @param {object} contest
+ * @param {{ team?: object, submissions?: object[], problems?: object[] }} [options]
+ * @param {object} [options.team] the signed-in team, for its rank and solved count
+ * @param {object[]} [options.submissions] the team's submissions (accepted for API symmetry; not shown yet)
+ * @param {object[]} [options.problems] contest problems when the contest payload lacks them
+ * @param {number} [now=Date.now()]
  * @returns {string}
  */
-function getProblemTitle(problem) {
-    const title = problem?.title?.toString().trim();
-    return title || `Problem ${problem?.publicId ?? ''}`.trim();
+export function renderContestDashboard(contest, { team, problems } = {}, now = Date.now()) {
+    const timing = getContestTiming(contest, now);
+    const phase = CONTEST_PHASE_LABELS[timing.phase];
+    const durationMinutes = Number(contest?.duration);
+    const problemCount = (contest?.problems ?? problems ?? []).length;
+    // A scheduled (future) contest has no endTime from getContestTiming yet,
+    // but its end is still known from the start and duration.
+    const endTime = timing.endTime ?? (timing.startTime && Number.isFinite(durationMinutes)
+        ? new Date(timing.startTime.getTime() + durationMinutes * MINUTE_MS)
+        : null);
+    const standings = Array.isArray(contest?.teams) ? resolveStandingTeams(contest) : [];
+
+    let remaining = '';
+    if (timing.phase === 'running' && timing.remainingMs != null) {
+        remaining = formatDuration(timing.remainingMs);
+    }
+    else if (timing.phase !== 'running') {
+        remaining = phase;
+    }
+
+    const lines = [
+        `# ${getContestPageName(contest)}`,
+        '',
+        describeContestPhase(timing),
+        '',
+        ...renderFields([
+            ['Phase', phase],
+            ['Start', timing.startTime ? formatLocalDateTime(timing.startTime) : 'Not started'],
+            ['End', endTime ? formatLocalDateTime(endTime) : (timing.startTime ? '' : 'Not started')],
+            ['Remaining (when opened)', remaining],
+            ['Duration', Number.isFinite(durationMinutes) ? formatDuration(durationMinutes * MINUTE_MS) : ''],
+            ['Penalty per wrong answer', formatMinutesField(contest?.penaltyTime)],
+            ['Scoreboard freeze', formatFreeze(contest)],
+            ['Problems', String(problemCount)],
+            ['Teams', String(standings.length)],
+        ]),
+    ];
+
+    if (team) {
+        const index = standings.findIndex(entry => sameTeam(entry, team));
+        const standing = standings[index];
+        lines.push('', `## ${getTeamPageName(team)}`, '');
+        lines.push(...renderFields([
+            ['Rank', standing ? `#${standing.rank ?? index + 1} of ${standings.length}` : '—'],
+            ['Solved', standing ? `${countSolvedProblems(standing)} of ${problemCount}` : '—'],
+            ['Total time', standing ? formatMinutes(normalizeStandingScore(standing)) : ''],
+        ]));
+    }
+
+    return `${lines.join('\n')}\n`;
 }
 
 /**
- * Choose the most informative statement field currently present in the problem payload.
+ * Build a problem page name: `A. Title`, or just the title when the problem is
+ * not in the list.
  * @param {object} problem
+ * @param {object[]} [problems]
  * @returns {string}
+ */
+export function getProblemPageName(problem, problems = []) {
+    return formatProblemLabel(problem, problems);
+}
+
+/**
+ * Build a submission page name: `Submission 852 · A. Title`.
+ * @param {object} submission
+ * @param {object[]} [problems]
+ * @returns {string}
+ */
+export function getSubmissionPageName(submission, problems = []) {
+    const problemLabel = formatSubmissionProblemLabel(submission?.problem, problems);
+    const heading = getSubmissionHeading(submission);
+    return problemLabel ? `${heading} · ${problemLabel}` : heading;
+}
+
+/**
+ * Build a team page name from the team name.
+ * @param {{ name?: string } | null | undefined} team
+ * @returns {string}
+ */
+export function getTeamPageName(team) {
+    return toText(team?.name) || 'Unnamed team';
+}
+
+/**
+ * Build the contest overview page name: `Contest Overview · Name`.
+ * @param {{ name?: string } | null | undefined} contest
+ * @returns {string}
+ */
+export function getContestPageName(contest) {
+    const name = toText(contest?.name);
+    return name ? `Contest Overview · ${name}` : 'Contest Overview';
+}
+
+/**
+ * Make a page name safe as a file name (it becomes the preview tab title):
+ * strips `/ \ : * ? " < > |` and control characters, collapses whitespace,
+ * trims trailing dots, and caps the length at 80 characters.
+ * @param {unknown} name
+ * @param {string} [fallback='page']
+ * @returns {string}
+ */
+export function toSafeFileName(name, fallback = 'page') {
+    const cleaned = String(name ?? '')
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\/\\:*?"<>|\u0000-\u001f\u007f]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, MAX_FILE_NAME_LENGTH)
+        .replace(/[.\s]+$/g, '')
+        .trim();
+
+    return cleaned || fallback;
+}
+
+/**
+ * Render `[label, value]` pairs as the shared definition-style field list,
+ * skipping blank values.
+ * @param {Array<[string, unknown]>} fields
+ * @returns {string[]}
+ */
+function renderFields(fields) {
+    return fields
+        .map(([label, value]) => [label, toText(value)])
+        .filter(([, value]) => value)
+        .map(([label, value]) => `- **${label}:** ${value}`);
+}
+
+/**
+ * Describe the team's progress on one problem as a single line.
+ * @param {object} problem
+ * @param {object[]} submissions
+ * @returns {string}
+ */
+function describeProblemProgress(problem, submissions) {
+    const { attempts, solved, pending } = summarizeProblemSubmissions(problem, submissions);
+    const attemptText = pluralize(attempts, 'attempt');
+
+    if (solved) {
+        return `**Solved** · ${attemptText}`;
+    }
+    if (pending) {
+        return `**Judging** · ${attemptText}`;
+    }
+    if (attempts) {
+        return `**Not solved yet** · ${attemptText}`;
+    }
+    return '**Not attempted yet**';
+}
+
+/**
+ * Write the one-line submission summary sentence.
+ * @param {object} submission
+ * @param {string} verdict
+ * @param {string} problemLabel
+ * @returns {string}
+ */
+function describeSubmission(submission, verdict, problemLabel) {
+    const target = problemLabel ? ` for ${problemLabel}` : '';
+    if (isPendingSubmission(submission?.status)) {
+        return `**${verdict}**${target} — still being judged.`;
+    }
+    return `**${verdict}**${target}.`;
+}
+
+/**
+ * Write the one-line contest phase summary sentence.
+ * @param {ReturnType<typeof getContestTiming>} timing
+ * @returns {string}
+ */
+function describeContestPhase(timing) {
+    if (timing.phase === 'running') {
+        return timing.remainingMs != null
+            ? `The contest is running; ${formatDuration(timing.remainingMs)} remained when this page was opened.`
+            : 'The contest is running.';
+    }
+    if (timing.phase === 'ended') {
+        return 'The contest has ended.';
+    }
+    return timing.startTime
+        ? `The contest starts ${formatLocalDateTime(timing.startTime)}.`
+        : 'The contest has not started yet.';
+}
+
+/**
+ * Describe the scoreboard freeze window and whether it is frozen now.
+ * @param {object} contest
+ * @returns {string}
+ */
+function formatFreeze(contest) {
+    const minutes = formatMinutesField(contest?.freezeTime);
+    if (!minutes) {
+        return contest?.frozenScoreboard ? 'Frozen now' : '';
+    }
+    return `${minutes}${contest?.frozenScoreboard ? ' (frozen now)' : ''}`;
+}
+
+/**
+ * Format a minutes-valued contest setting (`20 min`), or '' when missing.
+ * @param {unknown} minutes
+ * @returns {string}
+ */
+function formatMinutesField(minutes) {
+    const value = Number(minutes);
+    return minutes != null && minutes !== '' && Number.isFinite(value) ? formatMinutes(value * MINUTE_MS) : '';
+}
+
+/**
+ * Format an optional millisecond time score, or '' when missing.
+ * @param {unknown} ms
+ * @returns {string}
+ */
+function formatOptionalMinutes(ms) {
+    return ms != null && ms !== '' && Number.isFinite(Number(ms)) ? formatMinutes(ms) : '';
+}
+
+/**
+ * Build the submission heading: `Submission 852`.
+ * @param {{ id?: unknown } | null | undefined} submission
+ * @returns {string}
+ */
+function getSubmissionHeading(submission) {
+    const id = toText(submission?.id);
+    return id ? `Submission ${id}` : 'Submission';
+}
+
+/**
+ * Label a submission's problem with the contest letter, preferring the full
+ * problem from the contest list when the submission carries only a stub.
+ * @param {object | null | undefined} problem
+ * @param {object[]} problems
+ * @returns {string}
+ */
+function formatSubmissionProblemLabel(problem, problems) {
+    if (!problem) {
+        return '';
+    }
+    const fullProblem = (problems ?? []).find(entry => sameEntity(entry, problem)) ?? problem;
+    return formatProblemLabel(fullProblem, problems);
+}
+
+/**
+ * Label a problem as `A. Title`, falling back to the title (or `Problem`)
+ * when no letter can be resolved.
+ * @param {object} problem
+ * @param {object[]} problems
+ * @returns {string}
+ */
+function formatProblemLabel(problem, problems) {
+    const letter = getProblemLetter(problem, problems);
+    const title = toText(problem?.title) || toText(problem?.name);
+    if (letter) {
+        return title ? `${letter}. ${title}` : `Problem ${letter}`;
+    }
+    return title || 'Problem';
+}
+
+/**
+ * Choose the most informative statement field present in the problem payload.
+ * @param {object} problem
+ * @returns {string | undefined}
  */
 function getProblemStatement(problem) {
     return [problem?.description, problem?.statement, problem?.body]
@@ -236,31 +485,73 @@ function getProblemStatement(problem) {
 }
 
 /**
- * Append a submission detail line when the source value is present.
- * @param {string[]} lines
- * @param {string} label
- * @param {unknown} value
+ * Render the public input/output pairs as a Markdown table numbered from 1,
+ * matching the exported testcase files. Returns '' when there are none.
+ * @param {object} problem
+ * @returns {string}
  */
-function appendSubmissionField(lines, label, value) {
-    const normalizedValue = value?.toString().trim();
-    if (normalizedValue) {
-        lines.push(`${label}: ${normalizedValue}`);
+function buildPublicCasesTable(problem) {
+    const publicCases = extractPublicCases(problem);
+    if (!publicCases.length) {
+        return '';
     }
+
+    return [
+        '## Public test cases',
+        '',
+        '| # | Input | Output |',
+        '| :-- | :-- | :-- |',
+        ...publicCases.map((testCase, index) =>
+            `| ${index + 1} | ${formatTableCell(testCase.input)} | ${formatTableCell(testCase.output)} |`),
+    ].join('\n');
 }
 
 /**
- * Build a compact submission problem label for output-channel summaries.
- * @param {{ publicId?: string, title?: string } | undefined | null} problem
+ * Keep multiline text readable inside a Markdown table cell: encode HTML,
+ * pipe, and Markdown emphasis characters as entities (so `a*b*c` stays
+ * literal), keep leading spaces, and join lines with `<br>`.
+ * @param {unknown} value
  * @returns {string}
  */
-function buildSubmissionProblemLabel(problem) {
-    const title = problem?.title?.toString().trim();
-    const publicId = problem?.publicId?.toString().trim();
-    const suffix = publicId ? ` (${publicId})` : '';
+function formatTableCell(value) {
+    const lines = String(value ?? '')
+        .replace(/\r\n?/g, '\n')
+        .replace(/\n+$/, '')
+        .split('\n')
+        .map(line => line
+            .replace(/[&<>|*_`[\]\\~]/g, char => `&#${char.charCodeAt(0)};`)
+            .replace(/^ +/, spaces => '&nbsp;'.repeat(spaces.length)));
 
-    if (title) {
-        return `${title}${suffix}`;
-    }
+    return `<code>${lines.join('<br>')}</code>`;
+}
 
-    return publicId ? `Problem${suffix}` : '';
+/**
+ * Wrap text in a fenced code block whose fence is longer than any backtick
+ * run inside the text, so judge output cannot break out of the block.
+ * @param {string} text
+ * @returns {string}
+ */
+function fence(text) {
+    const longestRun = Math.max(2, ...(text.match(/`+/g) ?? []).map(run => run.length));
+    const marker = '`'.repeat(longestRun + 1);
+    return `${marker}text\n${text}\n${marker}`;
+}
+
+/**
+ * Pluralize a count: `1 attempt`, `2 attempts`.
+ * @param {number} count
+ * @param {string} noun
+ * @returns {string}
+ */
+function pluralize(count, noun) {
+    return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * Trim a value to text, treating null and undefined as ''.
+ * @param {unknown} value
+ * @returns {string}
+ */
+function toText(value) {
+    return value == null ? '' : String(value).trim();
 }
