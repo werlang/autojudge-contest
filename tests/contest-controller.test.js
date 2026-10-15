@@ -1027,12 +1027,35 @@ describe('contest controller', () => {
             });
         });
 
-        it('shows an error when the submission has no output to compare', async () => {
+        it('shows an information message when the submission has no output to compare', async () => {
             const result = await buildController().compareSubmissionOutput({ id: 9, status: 'ACCEPTED' });
 
             expect(result).toBeNull();
-            expect(showErrorMessage).toHaveBeenCalledWith('Submission #9 has no output to compare.');
+            expect(showInformationMessage).toHaveBeenCalledWith('Submission #9 has no expected and received output to compare.');
             expect(executeCommand).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            ['only expected', { expected: '3\n' }],
+            ['only received', { received: '4\n' }],
+        ])('does not open a one-sided diff when the submission has %s output', async (_label, hint) => {
+            const result = await buildController().compareSubmissionOutput({ id: 10, status: 'WRONG_ANSWER', hint });
+
+            expect(result).toBeNull();
+            expect(pageFiles.writeComparison).not.toHaveBeenCalled();
+            expect(executeCommand).not.toHaveBeenCalled();
+            expect(showInformationMessage).toHaveBeenCalledWith('Submission #10 has no expected and received output to compare.');
+        });
+
+        it('offers only View Details in the verdict toast when the output is one-sided', async () => {
+            const snapshot = createSnapshot();
+            const submitted = { id: 31, status: 'WRONG_ANSWER', hint: { received: '4\n' }, problem: { publicId: 'pa1b2c3d4e5f6', title: 'A + B' } };
+            showWarningMessage.mockImplementation(async (message) => (message.startsWith('Submit ') ? 'Submit' : undefined));
+            sessionApi.submitSolution.mockResolvedValue(submitted);
+
+            await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+
+            expect(showWarningMessage).toHaveBeenCalledWith('Wrong Answer on A. A + B (#31)', 'View Details');
         });
     });
 

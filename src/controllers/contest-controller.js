@@ -979,7 +979,7 @@ export function createContestController({
             }
 
             if (!hasComparableOutput(selectedSubmission)) {
-                void Promise.resolve(showErrorMessage(`Submission #${selectedSubmission.id} has no output to compare.`));
+                void Promise.resolve(showInformationMessage(`Submission #${selectedSubmission.id} has no expected and received output to compare.`));
                 return null;
             }
 
@@ -1161,13 +1161,14 @@ function isUriLike(value) {
 }
 
 /**
- * Check whether a submission carries expected or received output to diff.
+ * Check whether a submission carries both expected and received output, the
+ * two sides of the diff.
  * @param {object} submission
  * @returns {boolean}
  */
 function hasComparableOutput(submission) {
     const hint = submission?.hint;
-    return Boolean(hint) && (hint.expected != null || hint.received != null);
+    return Boolean(hint) && hint.expected != null && hint.received != null;
 }
 
 /**
