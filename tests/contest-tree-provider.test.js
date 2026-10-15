@@ -320,6 +320,16 @@ describe('contest tree provider', () => {
         expect(provider.createColoredCircleIcon('not a color').toString()).toContain(encodeURIComponent('#8b8b8b'));
     });
 
+    it('rejects hex colors with 5 or 7 digits', () => {
+        const provider = new ContestTreeProvider();
+
+        for (const invalid of ['#12345', '#1234567', '12345']) {
+            const icon = decodeURIComponent(provider.createColoredCircleIcon(invalid, true).toString());
+            expect(icon).toContain('fill="#8b8b8b"');
+        }
+        expect(decodeURIComponent(provider.createColoredCircleIcon('#abcd', true).toString())).toContain('fill="#abcd"');
+    });
+
     it('keeps solved and unsolved icons visibly different when the color is missing', () => {
         const provider = new ContestTreeProvider();
         const solved = decodeURIComponent(provider.createColoredCircleIcon(undefined, true).toString());

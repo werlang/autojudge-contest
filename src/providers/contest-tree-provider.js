@@ -114,14 +114,14 @@ export class ContestTreeProvider {
      * dark balloon colours (e.g. `#f0f0f0`) still read on light and dark themes.
      * The dot (12 px) and the ring (9 px across, 2 px stroke) differ in both
      * fill and size so the two states are distinct at 16 px. A missing or
-     * non-hex color falls back to a visible neutral grey (`ICON_FALLBACK_COLOR`)
-     * for the fill and the ring, so the solved state never disappears.
+     * invalid hex color (valid: 3, 4, 6 or 8 digits) falls back to a visible
+     * neutral grey (`ICON_FALLBACK_COLOR`) for the fill and the ring, so the solved state never disappears.
      * @param {string | undefined | null} hexColor
      * @param {boolean} [solved=false]
      * @returns {import('vscode').Uri}
      */
     createColoredCircleIcon(hexColor, solved = false) {
-        const color = typeof hexColor === 'string' && /^#?[0-9a-f]{3,8}$/i.test(hexColor.trim())
+        const color = typeof hexColor === 'string' && /^#?([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(hexColor.trim())
             ? (hexColor.trim().startsWith('#') ? hexColor.trim() : `#${hexColor.trim()}`)
             : ICON_FALLBACK_COLOR;
         const shape = solved
