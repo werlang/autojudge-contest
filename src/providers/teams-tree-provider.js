@@ -4,6 +4,9 @@ import { sameTeam, resolveRouteId } from '../utils/public-id.js';
 import { countSolvedProblems, resolveStandingTeams } from '../utils/standings.js';
 import { formatMinutes } from '../utils/time-format.js';
 
+/** Empty 16x16 SVG used as the placeholder icon of other teams' rows. */
+const BLANK_ICON_URI = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"></svg>')}`;
+
 /**
  * Provide the standings panel rendered beside the contest explorer.
  */
@@ -109,8 +112,9 @@ function buildFrozenScoreboardItem() {
 }
 
 /**
- * Build one clickable standings row. The logged-in team gets a highlighted icon
- * and a `(you)` marker so it is easy to find.
+ * Build one clickable standings row. The logged-in team gets a star icon and a
+ * `(you)` marker; every other row gets an invisible placeholder icon so all
+ * labels start at the same column.
  * @param {object} team normalized standings team carrying `rank`
  * @param {object | undefined | null} currentTeam the logged-in team from the snapshot
  * @param {number | null} problemCount total contest problems, when known
@@ -135,7 +139,9 @@ function buildStandingTeamItem(team, currentTeam, problemCount) {
         tooltip: `Rank ${team.rank} \u00b7 ${solvedLabel} \u00b7 ${timeLabel} total time${isCurrentTeam ? ' \u00b7 your team' : ''}`,
         iconPath: isCurrentTeam
             ? new vscode.ThemeIcon('star-full', new vscode.ThemeColor('charts.yellow'))
-            : new vscode.ThemeIcon('person'),
+            // VS Code indents icon-less rows differently from the starred row, so
+            // other teams get an invisible icon that keeps every label aligned.
+            : vscode.Uri.parse(BLANK_ICON_URI),
         collapsibleState: 0,
         contextValue: TREE_CONTEXT.STANDING_TEAM,
         command: {

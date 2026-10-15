@@ -12,6 +12,9 @@ vi.mock('vscode', () => ({
             this.color = color;
         }
     },
+    Uri: {
+        parse: (value) => ({ toString: () => value }),
+    },
 }), { virtual: true });
 
 import { COMMANDS, TREE_CONTEXT } from '../src/constants.js';
@@ -71,7 +74,10 @@ describe('teams standings provider', () => {
                 tooltip: 'Rank 2 \u00b7 1 of 2 problems solved \u00b7 3.3 min total time \u00b7 your team',
             }),
         ]);
-        expect(rows[0].iconPath).toMatchObject({ id: 'person' });
+        // Other teams get an invisible placeholder icon instead of a repeated person icon.
+        expect(rows[0].iconPath.id).toBeUndefined();
+        expect(decodeURIComponent(rows[0].iconPath.toString()))
+            .toBe('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"></svg>');
         expect(rows[1].iconPath).toMatchObject({ id: 'star-full', color: { id: 'charts.yellow' } });
     });
 
