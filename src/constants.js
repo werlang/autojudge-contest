@@ -12,6 +12,18 @@ export const CONTEXT_KEYS = Object.freeze({
 });
 
 /**
+ * Values of the `autojudgeContest.state` context key. `loading` covers the first
+ * session restore, and `offline` means a stored session could not be loaded
+ * because the server was unreachable (the token is kept).
+ */
+export const VIEW_STATES = Object.freeze({
+    LOADING: 'loading',
+    LOGGED_IN: 'loggedIn',
+    LOGGED_OUT: 'loggedOut',
+    OFFLINE: 'offline',
+});
+
+/**
  * Stable command identifiers used by the manifest, tree items, and activation flow.
  */
 export const COMMANDS = Object.freeze({
@@ -24,6 +36,7 @@ export const COMMANDS = Object.freeze({
     REFRESH_TREE: 'autojudgeContest.refreshTree',
     OPEN_CONTEST_DASHBOARD: 'autojudgeContest.openContestDashboard',
     SUBMIT_ACTIVE_FILE: 'autojudgeContest.submitActiveFile',
+    COMPARE_SUBMISSION_OUTPUT: 'autojudgeContest.compareSubmissionOutput',
 });
 
 /**
@@ -34,4 +47,6 @@ export const TREE_CONTEXT = Object.freeze({
     PROBLEM: 'autojudgeContest.problem',
     STANDING_TEAM: 'autojudgeContest.standingTeam',
     SUBMISSION: 'autojudgeContest.submission',
+    // A submission whose hint carries expected and received output, so it can be diffed.
+    SUBMISSION_WITH_OUTPUT: 'autojudgeContest.submission.output',
 });
