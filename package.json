@@ -332,7 +332,7 @@
           "type": "boolean",
           "default": true,
           "order": 4,
-          "markdownDescription": "Ask for confirmation before submitting the active file, since a rejected submission adds a penalty. Unsaved files are always confirmed before they are saved and submitted."
+          "markdownDescription": "Ask for confirmation before submitting the active file, since a rejected attempt adds penalty time only if you solve that problem later. Unsaved files are always confirmed before they are saved and submitted."
         }
       }
     }

@@ -19,4 +19,11 @@ describe('package manifest', () => {
             expect(regex.test('.txt')).toBe(false);
         }
     });
+
+    it('describes a rejected attempt as penalty only when the problem is solved later', () => {
+        const { markdownDescription } = manifest.contributes.configuration.properties['autojudgeContest.confirmBeforeSubmit'];
+
+        expect(markdownDescription).toContain('adds penalty time only if you solve that problem later');
+        expect(markdownDescription).not.toContain('adds a penalty');
+    });
 });
