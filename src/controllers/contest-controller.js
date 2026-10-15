@@ -158,7 +158,12 @@ export function createContestController({
     const activePolls = new Map();
     // Promise of the running shared poll loop, or null.
     let pollLoop = null;
+    // Last poll failure logged; cleared after a successful request so a
+    // recurring failure is logged again.
     let pollErrorMessage = null;
+    // Submission ids already logged as "still being judged", so a submission
+    // stuck in the judge is reported once, not on every 2.5 min retry.
+    const stillJudgingLogged = new Set();
     // Re-poll timers for submissions whose poll timed out while still pending.
     const pollRetryTimers = new Set();
     let pollAbort = new AbortController();
@@ -626,6 +631,7 @@ export function createContestController({
      */
     const startNewSession = () => {
         sessionGeneration += 1;
+        stillJudgingLogged.clear();
         stopAllPolling();
     };
 
@@ -731,7 +737,8 @@ export function createContestController({
 
     /**
      * Drop tracked ids past their deadline and schedule a slower re-poll for
-     * each while the session is unchanged and it is still pending.
+     * each while the session is unchanged and it is still pending. The
+     * "still being judged" warning is logged once per submission id.
      * @param {number} generation
      * @returns {string[]} the ids still tracked
      */
@@ -744,7 +751,10 @@ export function createContestController({
 
             activePolls.delete(key);
             entry.settle(entry.submission);
-            log('warn', `Submission #${key} is still being judged. Checking again in ${SUBMISSION_POLL_BACKOFF_MS / 1000} s.`);
+            if (!stillJudgingLogged.has(key)) {
+                stillJudgingLogged.add(key);
+                log('warn', `Submission #${key} is still being judged. Checking again in ${SUBMISSION_POLL_BACKOFF_MS / 1000} s.`);
+            }
 
             const timer = setTimeout(() => {
                 pollRetryTimers.delete(timer);
@@ -774,6 +784,7 @@ export function createContestController({
         }
 
         activePolls.delete(key);
+        stillJudgingLogged.delete(key);
         const { problem } = entry;
         await mergeSubmissionIntoSnapshot(problem, finalSubmission);
         notifyVerdict(finalSubmission.problem ? finalSubmission : { ...finalSubmission, problem });
@@ -810,6 +821,9 @@ export function createContestController({
                             return ids;
                         },
                         resolve: (finalSubmission) => applyPolledVerdict(finalSubmission, generation),
+                        onSuccess: () => {
+                            pollErrorMessage = null;
+                        },
                         onError: (error) => {
                             if (pollErrorMessage !== error.message) {
                                 pollErrorMessage = error.message;

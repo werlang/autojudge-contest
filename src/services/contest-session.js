@@ -100,9 +100,10 @@ export async function submitSolution({ baseUrl, code, context, filename, problem
  *   drops timed-out ids there). The loop ends once it is empty.
  * - `resolve(submission)` receives each wanted submission that reached a final verdict.
  * - `onError(error)` reports a failed request; polling retries it next interval.
+ * - `onSuccess()` reports a request that succeeded (e.g. to re-arm error logging).
  * A SESSION_ENDED failure is rethrown, and an aborted `signal` (logout, session
  * end, deactivation) ends the loop and cancels the request in flight.
- * @param {{ baseUrl: string, context: import('vscode').ExtensionContext | { secrets: object, globalState: object }, pollIntervalMs?: number, signal?: AbortSignal, tracker: { ids: () => Array<number | string>, resolve: (submission: object) => Promise<void> | void, onError?: (error: Error) => void } }} options
+ * @param {{ baseUrl: string, context: import('vscode').ExtensionContext | { secrets: object, globalState: object }, pollIntervalMs?: number, signal?: AbortSignal, tracker: { ids: () => Array<number | string>, resolve: (submission: object) => Promise<void> | void, onError?: (error: Error) => void, onSuccess?: () => void } }} options
  * @returns {Promise<void>}
  */
 export async function pollSubmissionResults({
@@ -125,6 +126,7 @@ export async function pollSubmissionResults({
 
         try {
             const { submissions } = await getSubmissions({ baseUrl, signal, token: session.token });
+            tracker.onSuccess?.();
             for (const submission of submissions ?? []) {
                 const id = submission?.id?.toString().trim();
                 if (wanted.has(id) && !isPendingSubmission(submission.status)) {

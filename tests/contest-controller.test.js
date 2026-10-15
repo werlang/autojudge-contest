@@ -1218,6 +1218,21 @@ describe('contest controller', () => {
             expect(trackedIds(1)).toEqual(['1']);
         });
 
+        it('logs a submission stuck in the judge as still being judged only once', async () => {
+            vi.useFakeTimers();
+            const snapshot = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
+            sessionApi.restoreContestSession.mockResolvedValue(snapshot);
+            sessionApi.refreshContestDetails.mockResolvedValue(snapshot.contest);
+            pollTimesOut();
+            const controller = buildController();
+
+            await controller.refreshTree({ silent: true });
+            await vi.advanceTimersByTimeAsync(90000);
+
+            expect(sessionApi.pollSubmissionResults.mock.calls.length).toBeGreaterThan(2);
+            expect(outputChannel.appendLine.mock.calls.filter(([line]) => line.includes('still being judged'))).toHaveLength(1);
+        });
+
         it('does not re-poll a timed-out submission after logout', async () => {
             vi.useFakeTimers();
             const snapshot = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
@@ -1284,6 +1299,20 @@ describe('contest controller', () => {
 
             expect(outputChannel.appendLine.mock.calls.filter(([line]) => line.includes('fetch failed'))).toHaveLength(1);
             expect(tracker.ids()).toEqual(['1']);
+        });
+
+        it('logs a recurring check failure again after a successful check', async () => {
+            const snapshot = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
+            sessionApi.restoreContestSession.mockResolvedValue(snapshot);
+            const controller = buildController();
+
+            await controller.refreshTree({ silent: true });
+            const { tracker } = sessionApi.pollSubmissionResults.mock.calls[0][0];
+            tracker.onError(new Error('fetch failed'));
+            tracker.onSuccess();
+            tracker.onError(new Error('fetch failed'));
+
+            expect(outputChannel.appendLine.mock.calls.filter(([line]) => line.includes('fetch failed'))).toHaveLength(2);
         });
 
         it('stops tracking with an error toast when the poll loop cannot run for a user submit', async () => {

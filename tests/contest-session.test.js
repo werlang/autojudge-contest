@@ -461,6 +461,30 @@ describe('contest session flow', () => {
         vi.useRealTimers();
     });
 
+    it('reports each successful request so the caller can re-arm its error logging', async () => {
+        vi.useFakeTimers();
+        const context = createContext();
+        const session = await import('../src/services/contest-session.js');
+        await session.writeStoredSession(context, { token: 'team-jwt-token' });
+
+        fetchMock
+            .mockRejectedValueOnce(new Error('fetch failed'))
+            .mockResolvedValueOnce(jsonResponse({ submissions: [{ id: 31, status: 'PENDING' }] }))
+            .mockResolvedValueOnce(jsonResponse({ submissions: [{ id: 31, status: 'ACCEPTED' }] }));
+        const events = [];
+        const tracker = createTracker([31]);
+        tracker.onError = () => events.push('error');
+        tracker.onSuccess = () => events.push('success');
+
+        const loop = session.pollSubmissionResults({ baseUrl: 'https://api.autojudge.test', context, pollIntervalMs: 1000, tracker });
+        await vi.advanceTimersByTimeAsync(3000);
+        await loop;
+
+        expect(events).toEqual(['error', 'success', 'success']);
+
+        vi.useRealTimers();
+    });
+
     it('retries after a failed request instead of ending the poll', async () => {
         vi.useFakeTimers();
         const context = createContext();
