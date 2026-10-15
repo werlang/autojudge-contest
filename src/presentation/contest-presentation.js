@@ -31,6 +31,7 @@ const MINUTE_MS = 60 * 1000;
 const MAX_FILE_NAME_LENGTH = 80;
 // Longest output (in lines) the inline diff compares, keeping the LCS table small.
 const MAX_DIFF_LINES = 200;
+const WHITESPACE_ONLY_NOTE = 'The outputs differ only in whitespace or line endings.';
 // Windows device names are reserved with or without an extension (`nul.md` too).
 const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 const CONTEST_PHASE_LABELS = {
@@ -132,7 +133,8 @@ export function renderSubmissionDetails(submission, { problems = [] } = {}) {
     const expected = hasExpected ? normalizeText(hint.expected) : '';
     const received = hasReceived ? normalizeText(hint.received) : '';
     if (hasExpected && hasReceived) {
-        lines.push('', ...renderOutputDiff(expected, received));
+        const rawDiffers = String(hint.expected) !== String(hint.received);
+        lines.push('', ...renderOutputDiff(expected, received, rawDiffers));
     }
     if (hasExpected || hasReceived) {
         lines.push('', '## Raw output');
@@ -515,12 +517,17 @@ function normalizeText(value) {
 }
 
 /**
- * Render the `## Output difference` section: a legend and a `diff` fence.
- * @param {string} expected
- * @param {string} received
+ * Render the `## Output difference` section: a legend and a `diff` fence. When
+ * the raw outputs differ but the diff shows no real change (no `-`/`+` lines,
+ * or every removed line only differs from its added line by trailing
+ * whitespace) a note says so, since the diff alone would look identical. The
+ * note is skipped when the diff is truncated, as the cut part is unverified.
+ * @param {string} expected normalized expected output
+ * @param {string} received normalized received output
+ * @param {boolean} rawDiffers whether the unnormalized outputs are different
  * @returns {string[]}
  */
-function renderOutputDiff(expected, received) {
+function renderOutputDiff(expected, received, rawDiffers) {
     const expectedLines = expected.split('\n');
     const receivedLines = received.split('\n');
     const truncated = expectedLines.length > MAX_DIFF_LINES || receivedLines.length > MAX_DIFF_LINES;
@@ -533,7 +540,22 @@ function renderOutputDiff(expected, received) {
         ...(truncated ? ['', `*Only the first ${MAX_DIFF_LINES} lines of each output are compared.*`] : []),
         '',
         fence(diff.join('\n'), 'diff'),
+        ...(rawDiffers && !truncated && isWhitespaceOnlyDiff(diff) ? ['', WHITESPACE_ONLY_NOTE] : []),
     ];
+}
+
+/**
+ * Tell whether a line diff only contains whitespace changes: the removed lines
+ * equal the added lines once trailing whitespace is ignored (trivially true
+ * when there are no removed or added lines).
+ * @param {string[]} diff output of `diffLines`
+ * @returns {boolean}
+ */
+function isWhitespaceOnlyDiff(diff) {
+    const removed = diff.filter(line => line.startsWith('-')).map(line => line.slice(1).trimEnd());
+    const added = diff.filter(line => line.startsWith('+')).map(line => line.slice(1).trimEnd());
+
+    return removed.length === added.length && removed.every((line, index) => line === added[index]);
 }
 
 /**

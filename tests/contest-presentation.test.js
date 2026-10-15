@@ -165,6 +165,24 @@ describe('renderSubmissionDetails', () => {
         expect(page).toContain('````diff\n-a\n b\n+c\n ```\n````');
     });
 
+    it('notes whitespace-only differences in the diff', () => {
+        const note = 'The outputs differ only in whitespace or line endings.';
+        const render = (expected, received) => renderSubmissionDetails({
+            id: 13,
+            status: 'WRONG_ANSWER',
+            hint: { expected, received },
+        });
+
+        // CRLF vs LF, a trailing newline, and trailing spaces all look identical.
+        expect(render('1\n2\n', '1\r\n2\r\n')).toContain(`\`\`\`diff\n 1\n 2\n\`\`\`\n\n${note}`);
+        expect(render('3\n', '3')).toContain(note);
+        expect(render('1 \n2', '1\n2')).toContain(note);
+        expect(render('1\n2', '1\n2 ')).toContain(note);
+        // Real differences and identical outputs get no note.
+        expect(render('42\n8', '42\n9')).not.toContain(note);
+        expect(render('1\n2', '1\n2')).not.toContain(note);
+    });
+
     it('caps the diff and notes the truncation', () => {
         const long = Array.from({ length: 250 }, (_, index) => `l${index}`).join('\n');
         const page = renderSubmissionDetails({ id: 12, status: 'WRONG_ANSWER', hint: { expected: long, received: `${long}\nextra` } });
