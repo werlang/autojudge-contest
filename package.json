@@ -34,6 +34,7 @@
   "icon": "media/icon.png",
   "main": "./src/extension.js",
   "activationEvents": [
+    "onStartupFinished",
     "onUri",
     "onCommand:autojudgeContest.loginTeam",
     "onCommand:autojudgeContest.logoutTeam",

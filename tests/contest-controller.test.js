@@ -531,6 +531,9 @@ describe('contest controller', () => {
             expect(withExplorerProgress).not.toHaveBeenCalled();
             expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'loggedOut');
             expect(showErrorMessage).not.toHaveBeenCalled();
+            expect(showWarningMessage).not.toHaveBeenCalled();
+            expect(showInformationMessage).not.toHaveBeenCalled();
+            expect(sessionApi.refreshContestDetails).not.toHaveBeenCalled();
         });
 
         it('goes offline without a toast when the silent startup restore fails with a stored token', async () => {

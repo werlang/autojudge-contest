@@ -26,4 +26,13 @@ describe('package manifest', () => {
         expect(markdownDescription).toContain('adds penalty time only if you solve that problem later');
         expect(markdownDescription).not.toContain('adds a penalty');
     });
+
+    it('activates after startup so a reload restores the session and status bar', () => {
+        expect(manifest.activationEvents).toContain('onStartupFinished');
+        expect(manifest.activationEvents).toEqual(expect.arrayContaining([
+            'onUri',
+            'onView:autojudgeContest.explorer',
+            'onView:autojudgeContest.teams',
+        ]));
+    });
 });
