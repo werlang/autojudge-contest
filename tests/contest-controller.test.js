@@ -732,6 +732,17 @@ describe('contest controller', () => {
             expect(submissionWorkspace.pickExportDirectory).not.toHaveBeenCalled();
         });
 
+        it('renders the overview from the current snapshot rather than a stale tree item contest', async () => {
+            const snapshot = createSnapshot();
+            snapshot.contest = { ...snapshot.contest, name: 'Regional Final', duration: 240 };
+            const staleTreeContest = { ...snapshot.contest, duration: 180, name: 'Old Name' };
+
+            const result = await buildLoggedInController(snapshot).openContestDashboard({ contest: staleTreeContest });
+
+            expect(result).toBe(snapshot.contest);
+            expect(writtenPaths()).toEqual([`${ROOT}/contest-dashboards/Contest Overview · Regional Final.md`]);
+        });
+
         it('opens the current contest overview when the palette passes no contest', async () => {
             const snapshot = createSnapshot();
 
@@ -1599,25 +1610,37 @@ describe('contest controller', () => {
         it('re-renders the explorer every 60 s only while it is visible', async () => {
             const explorerView = createFakeView(false);
             await loginWithViews({ teamsView: createFakeView(false), explorerView });
+            const setCalls = treeProvider.setSnapshot.mock.calls.length;
 
             await vi.advanceTimersByTimeAsync(60000);
-            expect(treeProvider.refresh).not.toHaveBeenCalled();
+            expect(treeProvider.setSnapshot).toHaveBeenCalledTimes(setCalls);
 
             explorerView.setVisible(true);
-            expect(treeProvider.refresh).toHaveBeenCalledTimes(1);
+            expect(treeProvider.setSnapshot).toHaveBeenCalledTimes(setCalls + 1);
 
             await vi.advanceTimersByTimeAsync(60000);
-            expect(treeProvider.refresh).toHaveBeenCalledTimes(2);
+            expect(treeProvider.setSnapshot).toHaveBeenCalledTimes(setCalls + 2);
+        });
+
+        it('pushes the contest refreshed by the standings timer to the explorer on its 60 s tick', async () => {
+            await loginWithViews({ teamsView: createFakeView(true), explorerView: createFakeView(true) });
+
+            await vi.advanceTimersByTimeAsync(60000);
+
+            expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(expect.objectContaining({
+                contest: expect.objectContaining({ name: 'Regional Final (live)' }),
+            }));
         });
 
         it('stops all timers on logout', async () => {
             const { controller } = await loginWithViews({ teamsView: createFakeView(true), explorerView: createFakeView(true) });
 
             await controller.logoutTeam();
+            const setCalls = treeProvider.setSnapshot.mock.calls.length;
             await vi.advanceTimersByTimeAsync(120000);
 
             expect(sessionApi.refreshContestDetails).not.toHaveBeenCalled();
-            expect(treeProvider.refresh).not.toHaveBeenCalled();
+            expect(treeProvider.setSnapshot).toHaveBeenCalledTimes(setCalls);
         });
 
         it('handles an ended session found by the timed standings refresh', async () => {

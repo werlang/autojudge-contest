@@ -101,7 +101,7 @@ export function logToChannel(channel, level, message) {
  * @param {<T>(title: string, task: (cancellation: object) => Promise<T>) => Promise<T>} options.withCancellableProgress shows a cancellable notification and passes the cancellation token to the task
  * @param {{ exportPublicCases: Function, readActiveSourceFile: Function, pickExportDirectory: Function, findExistingCaseFiles: Function }} options.submissionWorkspace
  * @param {{ setSnapshot: (snapshot: object | null) => void }} options.teamsStandingsProvider
- * @param {{ setSnapshot: (snapshot: object | null) => void, refresh?: () => void, getSnapshot?: () => object | null }} options.treeProvider
+ * @param {{ setSnapshot: (snapshot: object | null) => void, getSnapshot?: () => object | null }} options.treeProvider
  * @param {{ update: (snapshot: object | null) => void, setPendingCount: (count: number) => void } | null} [options.statusBar]
  * @param {{ visible?: boolean, onDidChangeVisibility?: Function } | null} [options.explorerView]
  * @param {{ visible?: boolean, onDidChangeVisibility?: Function } | null} [options.teamsView]
@@ -549,9 +549,11 @@ export function createContestController({
             }, interval);
         }
 
+        // Push the latest snapshot so the header also picks up the contest
+        // refreshed by the standings timer, not only fresher relative ages.
         explorerTimer = setInterval(() => {
             if (isVisible(explorerView)) {
-                treeProvider.refresh?.();
+                treeProvider.setSnapshot(currentSnapshot);
             }
         }, EXPLORER_RERENDER_INTERVAL_MS);
     };
@@ -922,7 +924,7 @@ export function createContestController({
         if (typeof explorerView?.onDidChangeVisibility === 'function') {
             viewSubscriptions.push(explorerView.onDidChangeVisibility((event) => {
                 if ((event?.visible ?? explorerView.visible) && currentSnapshot) {
-                    treeProvider.refresh?.();
+                    treeProvider.setSnapshot(currentSnapshot);
                 }
             }));
         }
@@ -1029,13 +1031,14 @@ export function createContestController({
         },
 
         /**
-         * Open the contest overview page. Without an argument (palette or status
-         * bar) the current contest is used.
-         * @param {object | undefined | null} contest
+         * Open the contest overview page. The current snapshot's contest (kept
+         * fresh by the standings refresh) wins over the tree item's copy, which
+         * may be stale; the argument is only a fallback without a snapshot.
+         * @param {object | undefined | null} contest contest or tree item `{ contest }`
          * @returns {Promise<object | null>}
          */
         async openContestDashboard(contest) {
-            const selectedContest = contest?.contest ?? contest ?? currentSnapshot?.contest;
+            const selectedContest = currentSnapshot?.contest ?? contest?.contest ?? contest;
             if (!selectedContest) {
                 return promptLogIn();
             }
@@ -1047,7 +1050,6 @@ export function createContestController({
                     `contest-${resolveRouteId(selectedContest) ?? 'unknown'}`,
                     renderContestDashboard(selectedContest, {
                         team: currentSnapshot?.team,
-                        submissions: currentSnapshot?.submissions,
                         problems: currentSnapshot?.problems,
                     }, now()),
                 );
