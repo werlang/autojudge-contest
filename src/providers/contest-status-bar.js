@@ -74,11 +74,12 @@ export class ContestStatusBar {
         const now = this.now();
         const contest = snapshot.contest ?? snapshot.team?.contest ?? null;
         const timing = getContestTiming(contest, now);
-        const timingText = describeContestTiming(timing, Boolean(snapshot.contestNotStarted), now) || 'Running';
+        // Empty when the contest has no start time: no timing is claimed rather than a guessed state.
+        const timingText = describeContestTiming(timing, Boolean(snapshot.contestNotStarted), now);
         // The server's not-started flag is sticky, so the clock decides once it has a start time.
         const awaitingStart = Boolean(snapshot.contestNotStarted) && timing.phase === 'notStarted';
         const standing = awaitingStart ? null : findTeamStanding(contest, snapshot.team);
-        const segments = [`$(mortar-board) ${timingText}`];
+        const segments = [timingText ? `$(mortar-board) ${timingText}` : '$(mortar-board)'];
 
         if (standing) {
             segments.push(`#${standing.rank}`);
@@ -188,7 +189,9 @@ function buildTooltip(snapshot, contest, timing, timingText, standing, awaitingS
         lines.push(`Team: ${teamName}`);
     }
 
-    lines.push(`Status: ${timingText}`);
+    if (timingText) {
+        lines.push(`Status: ${timingText}`);
+    }
 
     if (standing) {
         lines.push(`Rank: #${standing.rank} of ${standing.total}`);

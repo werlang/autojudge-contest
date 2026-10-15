@@ -149,6 +149,16 @@ describe('contest status bar', () => {
         expect(unknown.item.text).toBe('$(mortar-board) Not started');
     });
 
+    it('shows no timing segment when the contest has no start time', () => {
+        const { bar, item } = createBar(START);
+
+        bar.update(buildSnapshot({ contest: { publicId: 'k3m9x2p7q8w1a', name: 'Regional Final' } }));
+
+        expect(item.text).toBe('$(mortar-board)');
+        expect(item.text).not.toContain('Running');
+        expect(item.tooltip).not.toContain('Status:');
+    });
+
     it('trusts the clock over a sticky not-started flag once the contest has started', () => {
         const { bar, item } = createBar(START + 48 * MINUTE);
 
