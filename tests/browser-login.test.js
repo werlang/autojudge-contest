@@ -173,7 +173,7 @@ describe('BrowserLogin', () => {
     it('explains a callback that arrives with no login in progress', () => {
         expect(login.handleUri(callback({ code: 'c', state: STATE }))).toEqual({
             accepted: false,
-            reason: 'No login in progress. Run Login Team again.',
+            reason: 'No login in progress. Run Log In again.',
         });
     });
 

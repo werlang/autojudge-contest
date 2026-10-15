@@ -132,7 +132,7 @@ export class BrowserLogin {
             pending.reject = reject;
         });
         pending.timer = setTimeout(() => {
-            this.#end(new BrowserLoginError(LOGIN_FAILURE.TIMEOUT, 'The browser login timed out. Run Login Team again.'), pending);
+            this.#end(new BrowserLoginError(LOGIN_FAILURE.TIMEOUT, 'The browser login timed out. Run Log In again.'), pending);
         }, this.timeoutMs);
         this.pending = pending;
 
@@ -170,7 +170,7 @@ export class BrowserLogin {
         }
 
         if (!this.pending) {
-            return { accepted: false, reason: 'No login in progress. Run Login Team again.' };
+            return { accepted: false, reason: 'No login in progress. Run Log In again.' };
         }
 
         const params = new URLSearchParams(uri.query ?? '');
