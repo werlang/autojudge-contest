@@ -1232,6 +1232,100 @@ describe('contest controller', () => {
             );
         });
 
+        describe('submission page refresh', () => {
+            /**
+             * Hold the poll loop until `release()` is called, then deliver the verdict.
+             * @param {object} final
+             * @returns {() => void} release
+             */
+            function pollHeldUntilReleased(final) {
+                let release;
+                const gate = new Promise((resolve) => { release = resolve; });
+                sessionApi.pollSubmissionResults.mockImplementation(async ({ tracker }) => {
+                    tracker.ids();
+                    await gate;
+                    await tracker.resolve(final);
+                });
+                return release;
+            }
+
+            it('rewrites an opened submission page when the verdict arrives, without reopening it', async () => {
+                const snapshot = createSnapshot();
+                const final = { ...pending(), status: 'ACCEPTED' };
+                sessionApi.submitSolution.mockResolvedValue(pending());
+                const release = pollHeldUntilReleased(final);
+                const controller = buildLoggedInController(snapshot);
+
+                const submitted = controller.submitActiveFile(snapshot.problems[0]);
+                await flushPromises(50);
+                await controller.openSubmission(pending());
+                expect(pageContent()).toContain('Still being judged');
+                const opens = openTextDocument.mock.calls.length;
+                const previews = executeCommand.mock.calls.filter(([command]) => command === 'markdown.showPreview').length;
+                const writes = pageFiles.writePage.mock.calls.length;
+
+                release();
+                await submitted;
+                await flushPromises();
+
+                expect(pageFiles.writePage.mock.calls.length).toBe(writes + 1);
+                expect(writtenPaths().at(-1)).toBe(`${ROOT}/submission-details/Submission 27 · A. A + B.md`);
+                expect(pageContent()).not.toContain('Still being judged');
+                expect(pageContent()).toContain('Accepted');
+                expect(openTextDocument.mock.calls.length).toBe(opens);
+                expect(executeCommand.mock.calls.filter(([command]) => command === 'markdown.showPreview').length).toBe(previews);
+            });
+
+            it('does not write a page for a submission whose page was never opened', async () => {
+                const snapshot = createSnapshot();
+                sessionApi.submitSolution.mockResolvedValue(pending());
+                pollResolves({ ...pending(), status: 'ACCEPTED' });
+
+                await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+                await flushPromises();
+
+                expect(pageFiles.writePage).not.toHaveBeenCalled();
+            });
+
+            it('forgets generated pages on logout', async () => {
+                const snapshot = createSnapshot();
+                const final = { ...pending(), status: 'ACCEPTED' };
+                sessionApi.submitSolution.mockResolvedValue(pending());
+                pollTimesOut();
+                const controller = buildLoggedInController(snapshot);
+
+                await controller.submitActiveFile(snapshot.problems[0]);
+                await controller.openSubmission(pending());
+                await controller.logoutTeam();
+                pageFiles.writePage.mockClear();
+                // Restore the session (refresh does not start a new one): the same
+                // submission gets its verdict, but its old page is no longer tracked.
+                sessionApi.restoreContestSession.mockResolvedValue({ ...snapshot, submissions: [pending()] });
+                pollResolves(final);
+                await controller.refreshTree({ silent: true });
+                await flushPromises();
+
+                expect(pageFiles.writePage).not.toHaveBeenCalled();
+            });
+
+            it('logs and carries on when the page rewrite fails', async () => {
+                const snapshot = createSnapshot();
+                const final = { ...pending(), status: 'ACCEPTED' };
+                sessionApi.submitSolution.mockResolvedValue(pending());
+                const release = pollHeldUntilReleased(final);
+                const controller = buildLoggedInController(snapshot);
+
+                const submitted = controller.submitActiveFile(snapshot.problems[0]);
+                await flushPromises(50);
+                await controller.openSubmission(pending());
+                pageFiles.writePage.mockRejectedValue(new Error('disk full'));
+                release();
+
+                await expect(submitted).resolves.toEqual(expect.objectContaining({ status: 'ACCEPTED' }));
+                expect(outputChannel.appendLine).toHaveBeenCalledWith(expect.stringContaining('Could not refresh the page of submission #27'));
+            });
+        });
+
         it('returns without awaiting the verdict toast', async () => {
             const snapshot = createSnapshot();
             sessionApi.submitSolution.mockResolvedValue(pending());

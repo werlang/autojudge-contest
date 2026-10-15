@@ -183,6 +183,9 @@ export function createContestController({
     // Submission ids already logged as "still being judged", so a submission
     // stuck in the judge is reported once, not on every 2.5 min retry.
     const stillJudgingLogged = new Set();
+    // Ids of submissions whose details page was generated in this session, so a
+    // later verdict can rewrite the file the Markdown preview is showing.
+    const generatedSubmissionPages = new Set();
     // Re-poll timers for submissions whose poll timed out while still pending.
     const pollRetryTimers = new Set();
     let pollAbort = new AbortController();
@@ -674,6 +677,7 @@ export function createContestController({
     const startNewSession = () => {
         sessionGeneration += 1;
         stillJudgingLogged.clear();
+        generatedSubmissionPages.clear();
         notStartedLogged = false;
         contestStartRetryAt = 0;
         stopAllPolling();
@@ -711,7 +715,35 @@ export function createContestController({
         };
 
         await syncTreeState(nextSnapshot);
+        await rewriteSubmissionPage(normalizedSubmission, nextSnapshot.problems ?? []);
         return nextSnapshot;
+    };
+
+    /**
+     * Re-render a submission's details page when it was generated earlier in
+     * this session, so an open Markdown preview (which refreshes when its file
+     * changes) shows the new verdict. Only the file is rewritten: nothing is
+     * opened or focused, and a write failure is logged, never thrown.
+     * @param {object} submission the merged submission
+     * @param {object[]} problems contest problems used for the page labels
+     * @returns {Promise<void>}
+     */
+    const rewriteSubmissionPage = async (submission, problems) => {
+        if (!generatedSubmissionPages.has(String(submission.id))) {
+            return;
+        }
+
+        try {
+            await pageFiles.writePage(
+                'submission-details',
+                getSubmissionPageName(submission, problems),
+                `submission-${submission.id ?? 'unknown'}`,
+                renderSubmissionDetails(submission, { problems }),
+            );
+        }
+        catch (error) {
+            log('warn', `Could not refresh the page of submission #${submission.id}: ${error?.message ?? error}`);
+        }
     };
 
     /**
@@ -1243,6 +1275,7 @@ export function createContestController({
                     `submission-${selectedSubmission.id ?? 'unknown'}`,
                     renderSubmissionDetails(selectedSubmission, { problems }),
                 );
+                generatedSubmissionPages.add(String(selectedSubmission.id));
                 return selectedSubmission;
             }
             catch (error) {
