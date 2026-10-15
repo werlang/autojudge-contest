@@ -26,11 +26,14 @@ import {
 
 const SOLVED_MARK = '✓';
 const JUDGING_LABEL = 'Judging…';
+// Mid grey reads against both light and dark sidebar backgrounds.
+const ICON_OUTLINE = '#808080';
 
 /**
  * Provide the contest explorer tree for logged-in contest snapshots: a contest
- * header (contest and team name), then one row per problem (letter, title, solved or
- * attempt state) with that problem's submissions nested newest-first.
+ * header (contest and team name), then one row per problem (letter, title, a
+ * balloon icon that is filled once solved, and a short state) with that
+ * problem's submissions nested newest-first.
  */
 export class ContestTreeProvider {
     /**
@@ -97,20 +100,26 @@ export class ContestTreeProvider {
     }
 
     /**
-     * Create the small balloon-color circle used as a problem's identity icon.
-     * A missing or non-hex color renders a transparent circle.
+     * Create the balloon-colour icon that doubles as the problem's solved signal:
+     * a filled dot when solved, a hollow ring (transparent centre) when not.
+     * Both carry a thin semi-transparent neutral outline so very light or very
+     * dark balloon colours (e.g. `#f0f0f0`) still read on light and dark themes.
+     * The dot (12 px) and the ring (9 px across, 2 px stroke) differ in both
+     * fill and size so the two states are distinct at 16 px. A missing or
+     * non-hex color renders a transparent shape, leaving only the outline.
      * @param {string | undefined | null} hexColor
+     * @param {boolean} [solved=false]
      * @returns {import('vscode').Uri}
      */
-    createColoredCircleIcon(hexColor) {
+    createColoredCircleIcon(hexColor, solved = false) {
         const color = typeof hexColor === 'string' && /^#?[0-9a-f]{3,8}$/i.test(hexColor.trim())
             ? (hexColor.trim().startsWith('#') ? hexColor.trim() : `#${hexColor.trim()}`)
             : '#00000000';
-        const svg = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">
-                <circle cx="8" cy="8" r="4" fill="${color}" />
-            </svg>
-        `;
+        const shape = solved
+            ? `<circle cx="8" cy="8" r="5.5" fill="${color}" stroke="${ICON_OUTLINE}" stroke-opacity="0.6" stroke-width="1" />`
+            : `<circle cx="8" cy="8" r="4.5" fill="none" stroke="${color}" stroke-width="2" />`
+                + `<circle cx="8" cy="8" r="5.75" fill="none" stroke="${ICON_OUTLINE}" stroke-opacity="0.5" stroke-width="0.5" />`;
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">${shape}</svg>`;
 
         return vscode.Uri.parse(
             `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
@@ -152,7 +161,9 @@ export class ContestTreeProvider {
     }
 
     /**
-     * Build one problem row with its submissions as children.
+     * Build one problem row with its submissions as children. The icon carries
+     * the solved state, the description at most one short fact, and the
+     * tooltip the full detail.
      * @param {object} problem
      * @param {object[]} problems all contest problems, already sorted
      * @param {object[]} submissions the team's submissions
@@ -168,15 +179,21 @@ export class ContestTreeProvider {
             .sort((left, right) => toTime(right.submittedAt) - toTime(left.submittedAt))
             .map(submission => buildSubmissionItem(submission, now));
         const publicId = resolveRouteId(problem);
+        const label = letter ? `${letter}. ${title}` : title;
+        const description = buildProblemDescription(summary);
 
         return {
             id: publicId ? `problem:${publicId}` : undefined,
-            label: letter ? `${letter}. ${title}` : title,
-            description: buildProblemDescription(summary),
+            label,
+            description,
+            // The solved state is only drawn in the icon, so announce it to screen readers.
+            accessibilityInformation: {
+                label: [label, summary.solved ? 'solved' : 'not solved', description].filter(Boolean).join(', '),
+            },
             tooltip: buildProblemTooltip(letter, title, summary),
             collapsibleState: resolveProblemCollapsibleState(summary, children.length),
             contextValue: TREE_CONTEXT.PROBLEM,
-            iconPath: this.createColoredCircleIcon(problem?.color),
+            iconPath: this.createColoredCircleIcon(problem?.color, summary.solved),
             children,
             problem,
         };
@@ -284,29 +301,20 @@ function buildContestHeaderTooltip(contestName, teamName, timing, timingText) {
 }
 
 /**
- * Describe a problem's state for the team: `✓ Solved`, `✓ Solved · 3 attempts`,
- * `Judging…`, `2 attempts`, or nothing when untouched.
+ * Describe a problem's state in at most one short fact, since the sidebar is
+ * narrow and the inline actions cover the description on hover: `Judging…`
+ * while a submission is pending, else `2 attempts` when attempted but unsolved,
+ * else nothing (solved shows in the icon; the attempt count of a solve stays in
+ * the tooltip).
  * @param {ReturnType<typeof summarizeProblemSubmissions>} summary
  * @returns {string}
  */
 function buildProblemDescription(summary) {
-    const parts = [];
-
-    if (summary.solved) {
-        parts.push(`${SOLVED_MARK} Solved`);
-    }
-
     if (summary.pending) {
-        parts.push(JUDGING_LABEL);
+        return JUDGING_LABEL;
     }
 
-    // A first-try solve or a lone pending attempt needs no attempt count.
-    const showAttempts = summary.solved || summary.pending ? summary.attempts > 1 : summary.attempts > 0;
-    if (showAttempts) {
-        parts.push(formatAttempts(summary.attempts));
-    }
-
-    return parts.join(' · ');
+    return !summary.solved && summary.attempts > 0 ? formatAttempts(summary.attempts) : '';
 }
 
 /**

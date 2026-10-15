@@ -203,11 +203,11 @@ describe('contest tree provider', () => {
             'E. First Try',
         ]);
         expect(problems.map(item => item.description)).toEqual([
-            '✓ Solved · 2 attempts',
+            '',
             '2 attempts',
             'Judging…',
             '',
-            '✓ Solved',
+            '',
         ]);
         expect(problems.map(item => item.collapsibleState)).toEqual([1, 1, 2, 0, 1]);
         expect(problems.map(item => item.id)).toEqual([
@@ -227,10 +227,49 @@ describe('contest tree provider', () => {
         expect(problems[0].tooltip).toContain('Solved in 2 attempts');
         expect(problems[0].tooltip).toContain('First accepted: ');
         expect(problems[0].tooltip).toContain('(40 min)');
+        expect(problems.map(item => item.accessibilityInformation.label)).toEqual([
+            'A. A + B, solved',
+            'B. Binary Search, not solved, 2 attempts',
+            'C. Cycles, not solved, Judging…',
+            'D. Untouched, not solved',
+            'E. First Try, solved',
+        ]);
+        expect(problems[1].tooltip).toContain('Not solved yet · 2 attempts');
+        expect(problems[2].tooltip).toContain('Judging… 1 pending');
         expect(problems[3].tooltip).toContain('No submissions yet');
+        expect(problems[4].tooltip).toContain('Solved in 1 attempt');
     });
 
-    it('keeps the solved mark while a later submission is judging', () => {
+    it('draws a filled outlined dot for solved problems and a hollow ring otherwise', () => {
+        const provider = new ContestTreeProvider();
+        const solved = decodeURIComponent(provider.createColoredCircleIcon('#f0f0f0', true).toString());
+        const unsolved = decodeURIComponent(provider.createColoredCircleIcon('f0f0f0').toString());
+
+        expect(solved).toMatch(/^data:image\/svg\+xml;utf8,<svg /);
+        expect(solved).toContain('r="5.5" fill="#f0f0f0" stroke="#808080" stroke-opacity="0.6"');
+        expect(solved).not.toContain('fill="none"');
+        expect(unsolved).toContain('r="4.5" fill="none" stroke="#f0f0f0" stroke-width="2"');
+        expect(unsolved).toContain('stroke="#808080" stroke-opacity="0.5"');
+        expect(unsolved).not.toContain('fill="#f0f0f0"');
+    });
+
+    it('fills the problem icon only once the problem is solved', () => {
+        const [, solved, attempted] = createProvider({
+            problems: [
+                { publicId: 'pa', order: 1, title: 'A + B', color: '#ff0000' },
+                { publicId: 'pb', order: 2, title: 'Binary Search', color: '#00ff00' },
+            ],
+            submissions: [
+                buildSubmission(1, 'ACCEPTED', 'pa', 10),
+                buildSubmission(2, 'WRONG_ANSWER', 'pb', 12),
+            ],
+        }).getChildren();
+
+        expect(decodeURIComponent(solved.iconPath.toString())).toContain('fill="#ff0000"');
+        expect(decodeURIComponent(attempted.iconPath.toString())).toContain('fill="none" stroke="#00ff00"');
+    });
+
+    it('shows only Judging… and expands the problem while a later submission is judging', () => {
         const [, problem] = createProvider({
             problems: [{ publicId: 'pa', order: 1, title: 'A + B' }],
             submissions: [
@@ -239,8 +278,11 @@ describe('contest tree provider', () => {
             ],
         }).getChildren();
 
-        expect(problem.description).toBe('✓ Solved · Judging… · 2 attempts');
+        expect(problem.description).toBe('Judging…');
         expect(problem.collapsibleState).toBe(2);
+        expect(problem.id).toBe('problem:pa');
+        expect(decodeURIComponent(problem.iconPath.toString())).toContain('r="5.5"');
+        expect(problem.tooltip).toContain('Solved in 2 attempts');
     });
 
     it('expands a problem whose first submission is still judging and collapses it once judged', () => {
@@ -256,6 +298,7 @@ describe('contest tree provider', () => {
         expect([pending.collapsibleState, judged.collapsibleState]).toEqual([2, 1]);
         // Same id either way, so VS Code keeps the user's own expand state.
         expect(pending.id).toBe(judged.id);
+        expect(judged.description).toBe('1 attempt');
     });
 
     it('labels a problem the same way in the explorer and on its page', () => {
