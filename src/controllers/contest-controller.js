@@ -45,7 +45,7 @@ const OPEN_FIRST_CASE_ACTION = 'Open First Case';
 const WAITING_FOR_BROWSER_MESSAGE = 'Complete the login in your browser…';
 const SESSION_ENDED_MESSAGE = 'Your session ended. Log in again (ask staff to reset your PIN if needed).';
 const HANDOFF_INVALID_MESSAGE = 'The browser login link expired or was already used. Run Log In again.';
-const CONTEST_NOT_STARTED_MESSAGE = 'The contest has not started yet. Refresh once it starts to load the problems.';
+const CONTEST_NOT_STARTED_MESSAGE = 'The contest has not started yet. The problems load automatically once it starts.';
 const LOGGED_OUT_MESSAGE = 'Log in to AutoJudge Contest first.';
 const SUBMIT_IN_PROGRESS_MESSAGE = 'A submission is already being sent. Wait for it to finish.';
 

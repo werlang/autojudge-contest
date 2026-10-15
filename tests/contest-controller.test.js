@@ -606,7 +606,7 @@ describe('contest controller', () => {
 
             expect(result).toEqual(snapshot);
             expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'loggedIn');
-            expect(outputChannel.appendLine).toHaveBeenCalledWith('The contest has not started yet. Refresh once it starts to load the problems.');
+            expect(outputChannel.appendLine).toHaveBeenCalledWith('The contest has not started yet. The problems load automatically once it starts.');
             expect(sessionApi.clearStoredSession).not.toHaveBeenCalled();
             expect(showErrorMessage).not.toHaveBeenCalled();
         });
