@@ -73,10 +73,11 @@ export class ContestStatusBar {
 
         const now = this.now();
         const contest = snapshot.contest ?? snapshot.team?.contest ?? null;
-        const notStartedFlag = Boolean(snapshot.contestNotStarted);
         const timing = getContestTiming(contest, now);
-        const timingText = describeContestTiming(timing, notStartedFlag, now) || 'Running';
-        const standing = notStartedFlag ? null : findTeamStanding(contest, snapshot.team);
+        const timingText = describeContestTiming(timing, Boolean(snapshot.contestNotStarted), now) || 'Running';
+        // The server's not-started flag is sticky, so the clock decides once it has a start time.
+        const awaitingStart = Boolean(snapshot.contestNotStarted) && timing.phase === 'notStarted';
+        const standing = awaitingStart ? null : findTeamStanding(contest, snapshot.team);
         const segments = [`$(mortar-board) ${timingText}`];
 
         if (standing) {
@@ -87,11 +88,11 @@ export class ContestStatusBar {
             segments.push(`$(sync~spin) Judging${this.pendingCount > 1 ? ` ${this.pendingCount}` : ''}`);
         }
 
-        const running = timing.phase === 'running' && !notStartedFlag;
+        const running = timing.phase === 'running';
         const nearEnd = running && timing.remainingMs != null && timing.remainingMs < WARNING_REMAINING_MS;
 
         this.item.text = segments.join(' · ');
-        this.item.tooltip = buildTooltip(snapshot, contest, timing, timingText, standing);
+        this.item.tooltip = buildTooltip(snapshot, contest, timing, timingText, standing, awaitingStart);
         this.item.backgroundColor = nearEnd ? new vscode.ThemeColor('statusBarItem.warningBackground') : undefined;
         this.item.command = {
             command: COMMANDS.OPEN_CONTEST_DASHBOARD,
@@ -100,7 +101,7 @@ export class ContestStatusBar {
         };
         this.item.show();
 
-        if (timing.phase === 'ended' && !notStartedFlag) {
+        if (timing.phase === 'ended') {
             this.stopTimer();
         } else {
             this.startTimer();
@@ -176,9 +177,10 @@ function countSolved(snapshot, standing) {
  * @param {ReturnType<typeof getContestTiming>} timing
  * @param {string} timingText
  * @param {object | null} standing
+ * @param {boolean} awaitingStart the contest has not started, so there is nothing solved yet
  * @returns {string}
  */
-function buildTooltip(snapshot, contest, timing, timingText, standing) {
+function buildTooltip(snapshot, contest, timing, timingText, standing, awaitingStart) {
     const lines = [contest?.name?.toString().trim() || 'Contest'];
     const teamName = snapshot.team?.name?.toString().trim();
 
@@ -192,7 +194,7 @@ function buildTooltip(snapshot, contest, timing, timingText, standing) {
         lines.push(`Rank: #${standing.rank} of ${standing.total}`);
     }
 
-    if (!snapshot.contestNotStarted) {
+    if (!awaitingStart) {
         lines.push(`Solved: ${countSolved(snapshot, standing)}`);
     }
 

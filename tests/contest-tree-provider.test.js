@@ -128,6 +128,21 @@ describe('contest tree provider', () => {
         }).getChildren()[0].description).toBe('Bits · Not started');
     });
 
+    it('trusts the clock over a sticky not-started flag once the contest is running', () => {
+        const rootChildren = createProvider({
+            contestNotStarted: true,
+            problems: [{ publicId: 'pa1b2c3d4e5f6', order: 1, title: 'A + B' }],
+        }).getChildren();
+
+        expect(rootChildren[0].description).toBe('Bits · 2h 12m left');
+        expect(rootChildren).toHaveLength(2);
+        expect(rootChildren[1]).toEqual(expect.objectContaining({
+            label: 'Contest started',
+            description: 'Refresh to load the problems',
+        }));
+        expect(rootChildren[1].command).toBeUndefined();
+    });
+
     it('falls back to "Contest" and omits timing when the contest has no name or window', () => {
         const [header] = createProvider({ contest: { publicId: 'k3m9x2p7q8w1a' } }).getChildren();
 

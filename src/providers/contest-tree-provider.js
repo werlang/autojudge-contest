@@ -133,7 +133,11 @@ export class ContestTreeProvider {
         const header = buildContestHeaderItem(this.snapshot, now);
 
         if (this.snapshot.contestNotStarted) {
-            return [header, buildNotStartedItem()];
+            // The flag is sticky: once the clock says the contest began, the problems
+            // just have not been reloaded yet, so say that instead of "not started".
+            const contest = this.snapshot.contest ?? this.snapshot.team?.contest ?? null;
+            const started = getContestTiming(contest, now).phase !== 'notStarted';
+            return [header, buildNotStartedItem(started)];
         }
 
         const problems = sortProblems(this.snapshot.problems);
@@ -220,6 +224,8 @@ function buildContestHeaderItem(snapshot, now) {
  * Describe where the contest is in time: `2h 12m left`, `Ended`,
  * `Starts in 25m`, or `Not started`. Returns an empty string when the contest
  * is running but its window is unknown, so no misleading state is shown.
+ * A valid start time in the past wins over the server's (sticky) not-started
+ * flag, which only decides when there is no usable start time.
  * @param {ReturnType<typeof getContestTiming>} timing
  * @param {boolean} notStartedFlag the server reported the contest has not started
  * @param {number} [now=Date.now()]
@@ -234,10 +240,6 @@ export function describeContestTiming(timing, notStartedFlag, now = Date.now()) 
 
         // Without a start time we only claim "Not started" when the server said so.
         return notStartedFlag || timing.startTime ? 'Not started' : '';
-    }
-
-    if (notStartedFlag) {
-        return 'Not started';
     }
 
     if (timing.phase === 'ended') {
@@ -436,15 +438,16 @@ function getSubmissionIcon(status) {
 }
 
 /**
- * Build the explorer note shown in place of the problems until the contest starts.
+ * Build the explorer note shown in place of the problems until they are loaded.
  * It has no command because there is nothing to open yet; refresh loads the problems.
+ * @param {boolean} [started=false] the contest clock says it already began
  * @returns {Record<string, unknown>}
  */
-function buildNotStartedItem() {
+function buildNotStartedItem(started = false) {
     return {
-        id: 'contest-not-started',
-        label: 'Contest has not started yet',
-        description: 'Refresh when it starts',
+        id: started ? 'contest-started' : 'contest-not-started',
+        label: started ? 'Contest started' : 'Contest has not started yet',
+        description: started ? 'Refresh to load the problems' : 'Refresh when it starts',
         collapsibleState: 0,
         iconPath: new vscode.ThemeIcon('clock'),
     };

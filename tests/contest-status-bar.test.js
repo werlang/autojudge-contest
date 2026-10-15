@@ -149,6 +149,22 @@ describe('contest status bar', () => {
         expect(unknown.item.text).toBe('$(mortar-board) Not started');
     });
 
+    it('trusts the clock over a sticky not-started flag once the contest has started', () => {
+        const { bar, item } = createBar(START + 48 * MINUTE);
+
+        bar.update(buildSnapshot({ contestNotStarted: true }));
+
+        expect(item.text).toBe('$(mortar-board) 2h 12m left · #2');
+        expect(item.tooltip).toContain('Status: 2h 12m left');
+        expect(item.tooltip).toContain('Solved: ');
+
+        const ended = createBar(START + 200 * MINUTE);
+        ended.bar.update(buildSnapshot({ contestNotStarted: true }));
+        expect(ended.item.text).toBe('$(mortar-board) Ended · #2');
+        expect(ended.clearInterval).not.toHaveBeenCalled();
+        expect(ended.setInterval).not.toHaveBeenCalled();
+    });
+
     it('adds a spinning Judging segment while verdicts are pending', () => {
         const { bar, item } = createBar(START + 48 * MINUTE);
         bar.update(buildSnapshot());
