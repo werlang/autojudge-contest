@@ -3,7 +3,7 @@
 Compete in AutoJudge programming contests without leaving VS Code: read the problems, test locally, submit, and follow your verdicts and the scoreboard from the editor.
 
 <p align="center">
-  <img src="media/demo.gif" alt="Opening a problem statement, exporting its public test cases, inspecting the diff of a Wrong Answer, submitting the fix, and getting Accepted while the team climbs the standings" width="900">
+  <img src="media/demo.gif" alt="Opening a problem statement, inspecting the diff of a Wrong Answer, submitting the fix, and getting Accepted while the team climbs from fourth to second in the standings" width="960">
 </p>
 
 ## Why use it
