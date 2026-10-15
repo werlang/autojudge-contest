@@ -23,7 +23,7 @@ The **AutoJudge Contest** extension allows competitive programming teams to focu
   Log in through the AutoJudge website: VS Code opens your browser, you enter your team code and PIN (or confirm if you are already logged in there), and the browser sends you back to VS Code logged in. Both share the same team session, which stays valid for the whole contest and is restored when VS Code restarts. If the AutoJudge server cannot be reached (or does not answer within 20 seconds), the views show an offline notice with a **Retry** link, and your session is kept. A solution upload gets 60 seconds; if it does not finish in time, check Contest Explorer before submitting again, since the server may already have received it.
 
 - **📖 Interactive Problem Browser**
-  Problems are listed in letter order (**A.**, **B.**, …) with your solved state and attempt count. Open a problem to read its statement, with its public test cases, as clean, readable Markdown directly inside VS Code. No web browser required.
+  Problems are listed in letter order (**A.**, **B.**, …). A filled balloon marks a problem you solved and a hollow ring one you have not. The row shows `Judging…` while a submission is pending, or your attempt count while the problem is unsolved. Open a problem to read its statement as clean, readable Markdown directly inside VS Code, with each public test case as copyable Input and Output blocks. No web browser required.
 
   ![Interactive Problem Browser](media/problems-tree.png)
 
@@ -31,18 +31,18 @@ The **AutoJudge Contest** extension allows competitive programming teams to focu
   Export public testcase input/output pairs as numbered `.in` and `.out` files (`<problem>-testcase-01.in`) for easy local debugging and validation. Files go to the active file's folder, or to your only workspace folder, or to a folder you choose. Existing files are replaced only after you confirm.
 
 - **⚡ Instant Submission & Poll-to-Verdict**
-  Submit your active source code file from a problem's row, the editor title bar, or the Command Palette. Supports `.c`, `.cpp`, `.java`, `.js`, `.php`, and `.py`. Pick the problem (the one you last submitted this file to is listed first), confirm the submission, and watch it show as **Judging** until the verdict arrives in a notification with **View Details** and **Compare Output** actions. A problem you have already solved is not submitted again, and a second submission is refused until the first one has been sent. Submissions still being judged are checked automatically, including after a restart: network errors only delay the next check, and a verdict still pending after 2 minutes is checked again 30 seconds later.
+  Submit your active source code file from a problem's row, the editor title bar, or the Command Palette. Supports `.c`, `.cpp`, `.java`, `.js`, `.php`, and `.py`. Pick an unsolved problem (the one you last submitted this file to is listed first), confirm the submission, and watch it appear under its problem as **Judging** until the verdict arrives in a notification with **View Details** and **Compare Output** actions. The problem expands to show the new submission while the Contest Explorer is visible. A problem you have already solved is not submitted again, and a second submission is refused until the first one has been sent. Submissions still being judged are checked automatically, including after a restart: network errors only delay the next check, and a verdict still pending after 2 minutes is checked again 30 seconds later.
 
   ![Instant Submission](media/submissions-tree.png)
 
 - **📊 Live Standings & Team Details**
-  Follow the **Standings** view, where teams are ranked by solved problems and then by lowest total time, with your team highlighted. It refreshes every 15 seconds while the view is visible. Click a team to open its details page with its rank, solved count, total time, and solved problems.
+  Follow the **Standings** view, where teams are ranked by solved problems and then by lowest total time, with your team highlighted. Long team names are shortened to fit (hover a row for the full name), and teams with no solved problems show `0 solved`. It refreshes every 15 seconds while the view is visible. Click a team to open its details page with its rank, solved count, total time, and solved problems.
 
 - **🕒 Contest Clock & Status Bar**
-  The contest header in the Contest Explorer shows the time left. The status bar shows the time left, your rank, and how many submissions are still being judged. Click either one to open the **Contest Overview** page.
+  The status bar shows the time left, your rank, and how many submissions are still being judged. It comes back on its own after a window reload, without opening the sidebar. The contest header in the Contest Explorer shows the contest and your team. Click the status bar or the header to open the **Contest Overview** page.
 
 - **🗂️ Submission History Tracking**
-  Each problem lists its own submissions, newest first, with the verdict and how long ago each was made. Open a submission to see its verdict, time or penalty, judge hint, and expected versus received output. Submissions with both expected and received output can be compared side by side.
+  Each problem lists its own submissions, newest first, with the verdict and how long ago each was made. Open a submission to see its verdict, time or penalty, judge hint, an inline diff of expected versus your output, and the raw outputs. Submissions with both can also be compared side by side with **Compare Expected and Received Output**.
 
 ![Submission View](media/submissions-view.png)
 ---
@@ -61,7 +61,7 @@ Get ready for the contest in just a few quick steps:
 > Before the contest starts, the explorer shows **Contest has not started yet** and keeps your session. The problems load on their own once the contest starts: within about 15 seconds while the **Standings** view is visible (about a minute while it is hidden), so no manual Refresh is needed.
 3. **Explore Problems:** In the **Contest Explorer**, each problem shows its letter, title, and your progress. Hover over a problem and click the **book** icon (Open Problem Statement) to read its statement, which opens as a Markdown page. The problem's submissions are nested beneath it.
 4. **Generate Testcases:** Hover over a problem and click the **beaker** icon (Export Public Test Cases) to write its public `.in` and `.out` files. They go into the folder of the active file when one is open, otherwise into your only workspace folder, otherwise into a folder you choose.
-5. **Submit & Monitor:** Open your solution file and click the **cloud upload** icon (Submit Active File…) on a problem row, or on the same icon in the editor title bar. Confirm the submission. It appears under the problem with a **Judging** label, the status bar shows the pending count, and the verdict arrives as a notification. Click a submission row to view its details.
+5. **Submit & Monitor:** Open your solution file and click the **cloud upload** icon (Submit Active File…) on a problem row, or on the same icon in the editor title bar. Confirm the submission. The problem expands to show it with a **Judging** label, the status bar shows the pending count, and the verdict arrives as a notification. Click a submission row to view its details.
 
 ---
 
@@ -105,7 +105,7 @@ All core functionality is easily accessible using the Command Palette (`Ctrl+Shi
 - **AutoJudge Contest: Open Team Details** (`autojudgeContest.openTeamStanding`) — Opens a team's details page. Offered from the Standings view only.
 - **AutoJudge Contest: Compare Expected and Received Output** (`autojudgeContest.compareSubmissionOutput`) — Opens a diff of a submission's expected and received output. Offered from the Contest Explorer for submissions that include output.
 
-Submit Active File… remembers the problem you last submitted each file to and lists it first. The three sidebar-only commands (Open Submission, Open Team Details, and Compare Expected and Received Output) are hidden from the Command Palette.
+Submit Active File… remembers the problem you last submitted each file to and lists it first. Problems you have already solved are left out of its quick pick. The three sidebar-only commands (Open Submission, Open Team Details, and Compare Expected and Received Output) are hidden from the Command Palette.
 
 ---
 
