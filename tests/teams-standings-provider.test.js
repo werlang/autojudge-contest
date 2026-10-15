@@ -221,4 +221,19 @@ describe('teams standings provider', () => {
         expect(Array.from(truncateTeamName('\u{1F680}'.repeat(30)))).toHaveLength(MAX_TEAM_NAME_LENGTH);
         expect(truncateTeamName('Bits')).toBe('Bits');
     });
+
+    it('never cuts a grapheme cluster at the truncation boundary', () => {
+        const flag = '\u{1F1E7}\u{1F1F7}';
+        const family = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}';
+        const accent = 'e\u0301';
+
+        // 22 letters then the cluster as the 23rd grapheme: it must stay whole.
+        for (const cluster of [flag, family, accent]) {
+            expect(truncateTeamName(`${'a'.repeat(22)}${cluster}bb`)).toBe(`${'a'.repeat(22)}${cluster}\u2026`);
+        }
+        // A cluster just past the cut is dropped entirely, never halved.
+        expect(truncateTeamName(`${'a'.repeat(23)}${flag}b`)).toBe(`${'a'.repeat(23)}\u2026`);
+        // 24 graphemes fit as is even though they are more than 24 code points.
+        expect(truncateTeamName(flag.repeat(24))).toBe(flag.repeat(24));
+    });
 });

@@ -4,8 +4,11 @@ import { sameTeam, resolveRouteId } from '../utils/public-id.js';
 import { countSolvedProblems, resolveStandingTeams } from '../utils/standings.js';
 import { formatMinutes } from '../utils/time-format.js';
 
-/** Longest team name (in characters, ellipsis included) shown in a row label. */
+/** Longest team name (in graphemes, ellipsis included) shown in a row label. */
 export const MAX_TEAM_NAME_LENGTH = 24;
+
+/** Splits names into user-perceived characters (flags, ZWJ emoji, combining marks). */
+const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
 /** Empty 16x16 SVG used as the placeholder icon of other teams' rows. */
 const BLANK_ICON_URI = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"></svg>')}`;
@@ -161,16 +164,17 @@ function buildStandingTeamItem(team, currentTeam, problemCount) {
 }
 
 /**
- * Cap a team name at {@link MAX_TEAM_NAME_LENGTH} characters, ending it with
- * an ellipsis when cut. Counts code points so emoji are never split in half.
+ * Cap a team name at {@link MAX_TEAM_NAME_LENGTH} user-perceived characters,
+ * ending it with an ellipsis when cut. Counts grapheme clusters, so flags, ZWJ
+ * emoji sequences and combining marks are never split in half.
  * @param {string} name
  * @returns {string}
  */
 export function truncateTeamName(name) {
-    const chars = Array.from(name);
-    if (chars.length <= MAX_TEAM_NAME_LENGTH) {
+    const graphemes = Array.from(GRAPHEME_SEGMENTER.segment(name), ({ segment }) => segment);
+    if (graphemes.length <= MAX_TEAM_NAME_LENGTH) {
         return name;
     }
 
-    return `${chars.slice(0, MAX_TEAM_NAME_LENGTH - 1).join('').trimEnd()}\u2026`;
+    return `${graphemes.slice(0, MAX_TEAM_NAME_LENGTH - 1).join('').trimEnd()}\u2026`;
 }
