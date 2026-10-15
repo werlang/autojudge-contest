@@ -548,7 +548,9 @@ export function createContestController({
 
     /**
      * Merge a submission into the in-memory snapshot so both sidebar views and
-     * the status bar update immediately.
+     * the status bar update immediately. The judge response is only
+     * `{ id, status }`, so a missing problem and `submittedAt` (now) are
+     * stamped on, keeping the new submission first in newest-first lists.
      * @param {object} problem
      * @param {object} submission
      * @returns {Promise<object | null>}
@@ -558,15 +560,14 @@ export function createContestController({
             return null;
         }
 
-        const normalizedSubmission = submission.problem
-            ? submission
-            : {
-                ...submission,
-                problem: {
-                    publicId: problem?.publicId,
-                    title: problem?.title,
-                },
-            };
+        const normalizedSubmission = {
+            ...submission,
+            problem: submission.problem ?? {
+                publicId: problem?.publicId,
+                title: problem?.title,
+            },
+            submittedAt: submission.submittedAt ?? new Date(now()).toISOString(),
+        };
 
         const nextSnapshot = {
             ...currentSnapshot,

@@ -952,14 +952,26 @@ describe('contest controller', () => {
             expect(showErrorMessage).not.toHaveBeenCalled();
         });
 
-        it('keeps the public id on a returned submission that lacks its problem', async () => {
+        it('stamps the problem and submittedAt on a judge response that is only { id, status }', async () => {
             const snapshot = createSnapshot();
+            snapshot.submissions = [
+                { id: 20, status: 'WRONG_ANSWER', problem: { publicId: 'pa1b2c3d4e5f6' }, submittedAt: '2026-05-28T03:30:00.000Z' },
+            ];
             sessionApi.submitSolution.mockResolvedValue({ id: 28, status: 'ACCEPTED' });
 
-            await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+            await buildLoggedInController(snapshot, { now: () => Date.parse('2026-05-28T04:00:00.000Z') })
+                .submitActiveFile(snapshot.problems[0]);
 
             expect(treeProvider.setSnapshot).toHaveBeenCalledWith(expect.objectContaining({
-                submissions: [{ id: 28, status: 'ACCEPTED', problem: { publicId: 'pa1b2c3d4e5f6', title: 'A + B' } }],
+                submissions: [
+                    {
+                        id: 28,
+                        status: 'ACCEPTED',
+                        problem: { publicId: 'pa1b2c3d4e5f6', title: 'A + B' },
+                        submittedAt: '2026-05-28T04:00:00.000Z',
+                    },
+                    snapshot.submissions[0],
+                ],
             }));
             expect(sessionApi.pollSubmissionResult).not.toHaveBeenCalled();
         });
