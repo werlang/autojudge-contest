@@ -279,10 +279,10 @@ describe('live settings readers', () => {
 
         const configModule = await import('../src/utils/config.js');
 
-        expect(configModule.default.SUPPORTED_EXTENSIONS).toContain('.py');
+        expect(configModule.SUPPORTED_EXTENSIONS).toContain('.py');
+        expect(configModule.default).toBeUndefined();
         expect(() => configModule.getBaseUrl()).toThrow('autojudgeContest.baseUrl');
-        expect(() => configModule.default.BASE_URL).toThrow('autojudgeContest.baseUrl');
-        expect(configModule.default.POLL_INTERVAL_MS).toBe(5000);
+        expect(configModule.getPollIntervalMs()).toBe(5000);
     });
 
     it('getBaseUrl reads the live value and throws an INVALID_SETTING error when it is invalid', async () => {
@@ -307,7 +307,7 @@ describe('live settings readers', () => {
     });
 
     it('getPollIntervalMs reads live, falls back to 5000 and clamps to at least 1000', async () => {
-        const { default: config, getPollIntervalMs } = await import('../src/utils/config.js');
+        const { getPollIntervalMs } = await import('../src/utils/config.js');
 
         vscodeState.pollIntervalMs = 2500.9;
         expect(getPollIntervalMs()).toBe(2500);
@@ -315,7 +315,5 @@ describe('live settings readers', () => {
         expect(getPollIntervalMs()).toBe(1000);
         vscodeState.pollIntervalMs = 'abc';
         expect(getPollIntervalMs()).toBe(5000);
-        vscodeState.pollIntervalMs = 3000;
-        expect(config.POLL_INTERVAL_MS).toBe(3000);
     });
 });

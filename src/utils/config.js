@@ -52,21 +52,3 @@ export function getPollIntervalMs() {
 
     return Math.max(Math.trunc(configuredIntervalMs), MIN_POLL_INTERVAL_MS);
 }
-
-/**
- * Shared configuration. `BASE_URL` and `POLL_INTERVAL_MS` are lazy getters that
- * read the settings on access; `POLL_INTERVAL_MS` never throws and `BASE_URL`
- * throws the friendly INVALID_SETTING error only when the setting is invalid.
- */
-const config = {
-    SUPPORTED_EXTENSIONS,
-    TEAM_PANEL_REFRESH_INTERVAL_MS,
-    get BASE_URL() {
-        return getBaseUrl();
-    },
-    get POLL_INTERVAL_MS() {
-        return getPollIntervalMs();
-    },
-};
-
-export default config;

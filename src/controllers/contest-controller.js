@@ -86,7 +86,7 @@ export function logToChannel(channel, level, message) {
  * @param {(document: unknown, options?: object) => Promise<unknown>} [options.showTextDocument]
  * @param {{ appendLine: (message: string) => void, info?: Function, warn?: Function, error?: Function }} options.outputChannel
  * @param {{ waitForHandoffCode: (cancellation?: object) => Promise<string> }} options.browserLogin starts the browser login and resolves with its one-time hand-off code
- * @param {() => number} [options.resolvePollIntervalMs]
+ * @param {() => number} [options.resolvePollIntervalMs] already normalized interval (`getPollIntervalMs`)
  * @param {() => string} options.resolveBaseUrl may throw an INVALID_SETTING error
  * @param {() => boolean} [options.resolveConfirmBeforeSubmit] reads `autojudgeContest.confirmBeforeSubmit` live (default true)
  * @param {{ clearStoredSession: Function, readStoredSession?: Function, redeemAndLoadContest: Function, pollSubmissionResult?: Function, refreshContestDetails?: Function, restoreContestSession: Function, submitSolution: Function }} options.sessionApi
@@ -658,7 +658,7 @@ export function createContestController({
             const finalSubmission = await sessionApi.pollSubmissionResult({
                 baseUrl: resolveBaseUrl(),
                 context,
-                pollIntervalMs: normalizePollIntervalMs(resolvePollIntervalMs()),
+                pollIntervalMs: resolvePollIntervalMs(),
                 signal,
                 submissionId: submission.id,
                 timeoutMs: SUBMISSION_POLL_TIMEOUT_MS,
@@ -1050,13 +1050,13 @@ export function createContestController({
                     return null;
                 }
 
-                // Read the buffer after a save, which may have run format-on-save.
-                const sourceCode = source.isDirty
-                    ? (source.document?.getText?.() || source.sourceCode)
-                    : source.sourceCode;
+                // Re-read after a save, which may have run format-on-save.
+                const { sourceCode } = source.isDirty
+                    ? await submissionWorkspace.readActiveSourceFile()
+                    : source;
                 const submission = await sessionApi.submitSolution({
                     baseUrl: resolveBaseUrl(),
-                    code: encodeSourceCode(sourceCode || ' '),
+                    code: encodeSourceCode(sourceCode),
                     context,
                     filename: source.filename,
                     problemId: resolveRouteId(problem),
@@ -1240,20 +1240,6 @@ function pluralize(count, noun) {
  */
 function toText(value) {
     return value == null ? '' : String(value).trim();
-}
-
-/**
- * Normalize the polling interval setting into a safe positive delay.
- * @param {unknown} value
- * @returns {number}
- */
-function normalizePollIntervalMs(value) {
-    const normalizedValue = Number(value);
-    if (!Number.isFinite(normalizedValue)) {
-        return DEFAULT_POLL_INTERVAL_MS;
-    }
-
-    return Math.max(Math.trunc(normalizedValue), 1000);
 }
 
 /**

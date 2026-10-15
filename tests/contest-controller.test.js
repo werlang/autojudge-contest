@@ -795,10 +795,14 @@ describe('contest controller', () => {
 
         it('saves a dirty file after the Save and Submit prompt and submits the saved content', async () => {
             const snapshot = createSnapshot();
-            const document = { save: vi.fn(async () => true), getText: vi.fn(() => 'saved content') };
-            submissionWorkspace.readActiveSourceFile.mockResolvedValue({
-                filename: 'main.cpp', sourceCode: 'old content', uri: fileUri('/workspace/main.cpp'), document, isDirty: true,
-            });
+            const document = { save: vi.fn(async () => true) };
+            submissionWorkspace.readActiveSourceFile
+                .mockResolvedValueOnce({
+                    filename: 'main.cpp', sourceCode: 'old content', uri: fileUri('/workspace/main.cpp'), document, isDirty: true,
+                })
+                .mockResolvedValue({
+                    filename: 'main.cpp', sourceCode: 'saved content', uri: fileUri('/workspace/main.cpp'), document, isDirty: false,
+                });
             showWarningMessage.mockResolvedValue('Save and Submit');
             sessionApi.submitSolution.mockResolvedValue(pending());
 
@@ -814,6 +818,36 @@ describe('contest controller', () => {
             expect(sessionApi.submitSolution).toHaveBeenCalledWith(expect.objectContaining({
                 code: Buffer.from('saved content', 'utf-8').toString('base64'),
             }));
+        });
+
+        it('submits the re-read file after a save instead of falling back to the pre-save text', async () => {
+            const snapshot = createSnapshot();
+            const document = { save: vi.fn(async () => true) };
+            submissionWorkspace.readActiveSourceFile
+                .mockResolvedValueOnce({
+                    filename: 'main.cpp', sourceCode: 'stale text', uri: fileUri('/workspace/main.cpp'), document, isDirty: true,
+                })
+                .mockResolvedValue({
+                    filename: 'main.cpp', sourceCode: ' ', uri: fileUri('/workspace/main.cpp'), document, isDirty: false,
+                });
+            showWarningMessage.mockResolvedValue('Save and Submit');
+            sessionApi.submitSolution.mockResolvedValue(pending());
+
+            await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+
+            expect(sessionApi.submitSolution).toHaveBeenCalledWith(expect.objectContaining({
+                code: Buffer.from(' ', 'utf-8').toString('base64'),
+            }));
+        });
+
+        it('passes the resolved poll interval through unchanged', async () => {
+            const snapshot = createSnapshot();
+            resolvePollIntervalMs.mockReturnValue(2500);
+            sessionApi.submitSolution.mockResolvedValue(pending());
+
+            await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+
+            expect(sessionApi.pollSubmissionResult).toHaveBeenCalledWith(expect.objectContaining({ pollIntervalMs: 2500 }));
         });
 
         it('neither saves nor submits when the unsaved-changes prompt is cancelled', async () => {
