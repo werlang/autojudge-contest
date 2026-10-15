@@ -44,6 +44,10 @@ export class ContestTreeProvider {
         this.snapshot = null;
         this.state = 'loggedOut';
         this.now = options.now ?? Date.now;
+        // Last built items by id, and each nested item's parent, so `getParent`
+        // and `findSubmissionItem` work although items are rebuilt per render.
+        this.itemsById = new Map();
+        this.parentsById = new Map();
     }
 
     /**
@@ -83,6 +87,8 @@ export class ContestTreeProvider {
     setSnapshot(snapshot) {
         this.snapshot = snapshot;
         this.state = snapshot ? 'loggedIn' : 'loggedOut';
+        this.itemsById.clear();
+        this.parentsById.clear();
         this.refresh();
     }
 
@@ -153,11 +159,59 @@ export class ContestTreeProvider {
 
         const problems = sortProblems(this.snapshot.problems);
         const submissions = Array.isArray(this.snapshot.submissions) ? this.snapshot.submissions : [];
+        const problemItems = problems.map(problem => this.buildProblemItem(problem, problems, submissions, now));
 
-        return [
-            header,
-            ...problems.map(problem => this.buildProblemItem(problem, problems, submissions, now)),
-        ];
+        this.indexItems(problemItems);
+        return [header, ...problemItems];
+    }
+
+    /**
+     * Replace the id index with the given problem rows and their submissions.
+     * Items without an id cannot be revealed, so they are skipped.
+     * @param {Array<Record<string, unknown>>} problemItems
+     */
+    indexItems(problemItems) {
+        this.itemsById.clear();
+        this.parentsById.clear();
+
+        for (const problemItem of problemItems) {
+            if (problemItem.id) {
+                this.itemsById.set(problemItem.id, problemItem);
+            }
+
+            for (const child of problemItem.children ?? []) {
+                if (child.id) {
+                    this.itemsById.set(child.id, child);
+                    this.parentsById.set(child.id, problemItem);
+                }
+            }
+        }
+    }
+
+    /**
+     * Return a node's parent, as `TreeView.reveal` requires: a submission row
+     * belongs to its problem row; problem, contest, and note rows are roots.
+     * @param {Record<string, unknown>} element
+     * @returns {Record<string, unknown> | undefined}
+     */
+    getParent(element) {
+        return element?.id ? this.parentsById.get(element.id) : undefined;
+    }
+
+    /**
+     * Find the current tree item of a submission, building the root rows when
+     * the index is empty, so it can be passed to `TreeView.reveal`.
+     * @param {string | number} submissionId
+     * @returns {Record<string, unknown> | undefined}
+     */
+    findSubmissionItem(submissionId) {
+        const id = `submission:${submissionId}`;
+
+        if (!this.itemsById.has(id)) {
+            this.getChildren();
+        }
+
+        return this.itemsById.get(id);
     }
 
     /**

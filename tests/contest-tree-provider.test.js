@@ -397,4 +397,54 @@ describe('contest tree provider', () => {
             TREE_CONTEXT.SUBMISSION,
         ]);
     });
+
+    describe('reveal support', () => {
+        const snapshot = {
+            problems: [{ publicId: 'pa', order: 1, title: 'A + B' }],
+            submissions: [buildSubmission(11, 'PENDING', 'pa', 43)],
+        };
+
+        it('finds the current submission item by id, building the root rows when needed', () => {
+            const provider = createProvider(snapshot);
+
+            const item = provider.findSubmissionItem(11);
+
+            expect(item).toEqual(expect.objectContaining({ id: 'submission:11' }));
+            expect(provider.getParent(item)?.children).toContain(item);
+            expect(provider.findSubmissionItem(99)).toBeUndefined();
+        });
+
+        it('returns the new item after the snapshot changes', () => {
+            const provider = createProvider(snapshot);
+            expect(provider.findSubmissionItem(12)).toBeUndefined();
+
+            provider.setSnapshot({
+                ...provider.getSnapshot(),
+                submissions: [buildSubmission(12, 'PENDING', 'pa', 44), ...snapshot.submissions],
+            });
+
+            expect(provider.findSubmissionItem(12)).toEqual(expect.objectContaining({ id: 'submission:12' }));
+        });
+
+        it('returns the problem row as the parent of a submission and undefined for roots', () => {
+            const provider = createProvider(snapshot);
+            const [header, problem] = provider.getChildren();
+            const [submission] = provider.getChildren(problem);
+
+            expect(provider.getParent(submission)).toBe(problem);
+            expect(provider.getParent(problem)).toBeUndefined();
+            expect(provider.getParent(header)).toBeUndefined();
+            expect(provider.getParent(undefined)).toBeUndefined();
+        });
+
+        it('has no parents while logged out or for the not-started note', () => {
+            const provider = createProvider({ contestNotStarted: true });
+            const [, note] = provider.getChildren();
+
+            expect(provider.getParent(note)).toBeUndefined();
+            expect(provider.findSubmissionItem(1)).toBeUndefined();
+            provider.setSnapshot(null);
+            expect(provider.findSubmissionItem(1)).toBeUndefined();
+        });
+    });
 });
