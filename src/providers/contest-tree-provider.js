@@ -202,8 +202,11 @@ export class ContestTreeProvider {
     }
 
     /**
-     * Find the current tree item of a submission, building the root rows when
-     * the index is empty, so it can be passed to `TreeView.reveal`.
+     * Find the current tree item of a submission so it can be passed to
+     * `TreeView.reveal`. The index is filled by `getChildren`; when the
+     * submission is not indexed yet (e.g. the snapshot just changed and the
+     * view has not re-rendered) this rebuilds the root rows via `getChildren()`
+     * and looks again. Returns `undefined` when the submission is not shown.
      * @param {string | number} submissionId
      * @returns {Record<string, unknown> | undefined}
      */
@@ -381,9 +384,10 @@ function buildProblemDescription(summary) {
  *
  * VS Code only applies this state when it first renders a row id (stable
  * `problem:<id>`); afterwards it keeps the user's own expand/collapse across
- * refreshes. So the reveal applies on load and when an untouched problem gets
- * its first submission, a problem the user collapsed stays collapsed, and the
- * row does not snap shut when the verdict arrives.
+ * refreshes. So the state applies on load and when an untouched problem gets
+ * its first submission, and the row does not snap shut when the verdict
+ * arrives. A refresh never re-expands a problem the user collapsed; only the
+ * explicit reveal after a submit (`TreeView.reveal` with `expand`) does.
  * @param {ReturnType<typeof summarizeProblemSubmissions>} summary
  * @param {number} childCount
  * @returns {0 | 1 | 2} None, Collapsed, or Expanded
