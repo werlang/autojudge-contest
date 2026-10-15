@@ -160,7 +160,8 @@ export function renderTeamStandingDetails(team, snapshot) {
     const problems = sortProblems(contest?.problems ?? snapshot?.problems);
     const solvedIds = Array.isArray(standing?.solvedProblemIds) ? standing.solvedProblemIds : [];
     const solvedProblems = problems.filter(problem => solvedIds.includes(resolveRouteId(problem)));
-    const solvedCount = countSolvedProblems(standing);
+    // Count only ids that match a contest problem, so the count agrees with the list below.
+    const solvedCount = problems.length ? solvedProblems.length : countSolvedProblems(standing);
     const totalTime = formatMinutes(normalizeStandingScore(standing));
     const name = escapeInline(getTeamPageName(team));
 

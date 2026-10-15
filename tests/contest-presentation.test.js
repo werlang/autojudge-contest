@@ -172,6 +172,17 @@ describe('renderTeamStandingDetails', () => {
         expect(page.indexOf('- A. A + B')).toBeLessThan(page.indexOf('- B. Binary Search'));
     });
 
+    it('counts only solved ids that match a contest problem', () => {
+        const ghost = { publicId: 'tghost0000000', name: 'Ghost', score: 120000, solvedProblemIds: ['paaaaaaaaaaaa', 'pmissing00000'] };
+        const contest = { ...CONTEST, teams: [...CONTEST.teams, ghost] };
+        const page = renderTeamStandingDetails(ghost, { contest });
+
+        expect(page).toMatch(/^Ghost is ranked #\d+ with 1 problem solved\.$/m);
+        expect(page).toContain('- **Solved:** 1 of 2');
+        expect(page).toContain('- A. A + B');
+        expect(page).not.toContain('pmissing');
+    });
+
     it('shows an empty state for a team with no solved problems', () => {
         const page = renderTeamStandingDetails(CONTEST.teams[2], { contest: CONTEST });
 
