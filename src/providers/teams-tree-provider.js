@@ -1,5 +1,8 @@
+import * as vscode from 'vscode';
 import { COMMANDS, TREE_CONTEXT } from '../constants.js';
+import { sameTeam, resolveRouteId } from '../utils/public-id.js';
 import { countSolvedProblems, resolveStandingTeams } from '../utils/standings.js';
+import { formatMinutes } from '../utils/time-format.js';
 
 /**
  * Provide the standings panel rendered beside the contest explorer.
@@ -36,7 +39,7 @@ export class TeamsStandingsProvider {
 
     /**
      * Replace the shared contest snapshot used to render team standings.
-     * @param {{ team?: { contest?: object } } | null} snapshot
+     * @param {{ team?: object, contest?: object } | null} snapshot
      */
     setSnapshot(snapshot) {
         this.snapshot = snapshot;
@@ -57,12 +60,16 @@ export class TeamsStandingsProvider {
             return [];
         }
 
-        const standingsTeams = resolveStandingTeams(this.snapshot?.contest);
+        const contest = this.snapshot?.contest;
+        const standingsTeams = resolveStandingTeams(contest);
         if (!standingsTeams.length) {
             return [buildEmptyStandingsItem()];
         }
 
-        return standingsTeams.map(team => buildStandingTeamItem(team));
+        const problemCount = Array.isArray(contest?.problems) ? contest.problems.length : null;
+        const rows = standingsTeams.map(team => buildStandingTeamItem(team, this.snapshot?.team, problemCount));
+
+        return contest?.frozenScoreboard ? [buildFrozenScoreboardItem(), ...rows] : rows;
     }
 
     /**
@@ -81,23 +88,51 @@ export class TeamsStandingsProvider {
  */
 function buildEmptyStandingsItem() {
     return {
-        label: 'No team standings available',
-        description: 'Refresh the contest to load the latest standings.',
+        label: 'No standings yet',
+        description: 'They appear once teams join the contest',
         collapsibleState: 0,
     };
 }
 
 /**
- * Build one clickable standings row.
- * @param {object} team
+ * Build the non-clickable notice row shown while the scoreboard is frozen.
  * @returns {Record<string, unknown>}
  */
-function buildStandingTeamItem(team) {
+function buildFrozenScoreboardItem() {
+    return {
+        id: 'standings:frozen',
+        label: 'Scoreboard frozen',
+        description: 'final results appear after the contest',
+        iconPath: new vscode.ThemeIcon('lock'),
+        collapsibleState: 0,
+    };
+}
+
+/**
+ * Build one clickable standings row. The logged-in team gets a highlighted icon
+ * and a `(you)` marker so it is easy to find.
+ * @param {object} team normalized standings team carrying `rank`
+ * @param {object | undefined | null} currentTeam the logged-in team from the snapshot
+ * @param {number | null} problemCount total contest problems, when known
+ * @returns {Record<string, unknown>}
+ */
+function buildStandingTeamItem(team, currentTeam, problemCount) {
     const solvedCount = countSolvedProblems(team);
+    const isCurrentTeam = sameTeam(team, currentTeam);
+    const timeLabel = formatMinutes(team.score);
+    const solvedLabel = problemCount == null
+        ? `${solvedCount} solved`
+        : `${solvedCount} of ${problemCount} problems solved`;
+    const summary = `${solvedCount} solved \u00b7 ${timeLabel}`;
 
     return {
-        label: team.name,
-        description: `${solvedCount} solved | ${formatStandingScore(team.score)}`,
+        id: `team:${resolveRouteId(team) ?? team.name}`,
+        label: `${team.rank}. ${team.name}`,
+        description: isCurrentTeam ? `${summary} (you)` : summary,
+        tooltip: `Rank ${team.rank} \u00b7 ${solvedLabel} \u00b7 ${timeLabel} total time${isCurrentTeam ? ' \u00b7 your team' : ''}`,
+        iconPath: isCurrentTeam
+            ? new vscode.ThemeIcon('star-full', new vscode.ThemeColor('charts.yellow'))
+            : new vscode.ThemeIcon('person'),
         collapsibleState: 0,
         contextValue: TREE_CONTEXT.STANDING_TEAM,
         command: {
@@ -107,14 +142,4 @@ function buildStandingTeamItem(team) {
         },
         team,
     };
-}
-
-/**
- * Format the visible score label to minutes and one decimal.
- * @param {number} score
- * @returns {string}
- */
-function formatStandingScore(score) {
-    const minutes = (score / 60000).toFixed(1);
-    return `${minutes} min`;
 }

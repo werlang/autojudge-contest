@@ -1,23 +1,57 @@
 import { resolveRouteId } from './public-id.js';
 
 /**
- * Normalize, sort, and enrich contest standings teams for shared controller and
- * provider use.
+ * Normalize, rank, and enrich contest standings teams for shared controller and
+ * provider use. On the AutoJudge server `score` is the team's total time in
+ * milliseconds (lower is better), so teams order by solved count descending,
+ * then score ascending, then name. Teams tied on both solved count and score
+ * share one `rank` (standard competition ranking: 1, 1, 3).
  * @param {object | undefined | null} contest
- * @returns {Array<object>}
+ * @returns {Array<object>} normalized teams, each carrying a 1-based `rank`
  */
 export function resolveStandingTeams(contest) {
     const rawTeams = Array.isArray(contest?.teams) ? contest.teams : [];
-
-    return rawTeams
+    const sortedTeams = rawTeams
         .map(normalizeStandingTeam)
-        .sort((left, right) => {
-            if (right.score !== left.score) {
-                return right.score - left.score;
-            }
+        .sort(compareStandingTeams);
 
-            return left.name.localeCompare(right.name);
-        });
+    return sortedTeams.map((team, index) => {
+        const previous = sortedTeams[index - 1];
+        const tiedWithPrevious = previous && hasSameStanding(previous, team);
+
+        // Ties inherit the previous team's rank; otherwise rank is the position.
+        team.rank = tiedWithPrevious ? previous.rank : index + 1;
+        return team;
+    });
+}
+
+/**
+ * Order two normalized teams: more solved first, then lower total time, then name.
+ * @param {object} left
+ * @param {object} right
+ * @returns {number}
+ */
+function compareStandingTeams(left, right) {
+    const solvedDiff = countSolvedProblems(right) - countSolvedProblems(left);
+    if (solvedDiff !== 0) {
+        return solvedDiff;
+    }
+
+    if (left.score !== right.score) {
+        return left.score - right.score;
+    }
+
+    return left.name.localeCompare(right.name);
+}
+
+/**
+ * Check whether two teams are tied on both solved count and total time.
+ * @param {object} left
+ * @param {object} right
+ * @returns {boolean}
+ */
+function hasSameStanding(left, right) {
+    return countSolvedProblems(left) === countSolvedProblems(right) && left.score === right.score;
 }
 
 /**
