@@ -157,6 +157,11 @@ export function createContestController({
     // async path captures it at its start and drops its result when it moved,
     // so a reply for an old session never touches the new one or its token.
     let sessionGeneration = 0;
+    // True while a login redeems its hand-off code: the generation already
+    // moved but the new token is not stored yet, so a restore or standings
+    // refresh started now would read the OLD token (and could clear the new
+    // one on SESSION_ENDED). Both are skipped until the redeem settles.
+    let loginRedeemInFlight = false;
     // Token of the submit currently between its start and the judge POST
     // response; a second submit is refused meanwhile so it never double-posts.
     let sendingSubmit = null;
@@ -475,7 +480,7 @@ export function createContestController({
      * re-rendered. When the contest has just started, a full restore follows.
      */
     const refreshTeamsStandings = async () => {
-        if (teamsRefreshInFlight) {
+        if (teamsRefreshInFlight || loginRedeemInFlight) {
             return;
         }
 
@@ -904,10 +909,15 @@ export function createContestController({
      * Load the stored session and show it. Failures other than an ended
      * session keep the token: with a snapshot already shown it stays (with its
      * verdict polls), otherwise the view switches to the offline state.
+     * Skipped while a login redeem is in flight; the login loads the snapshot.
      * @param {boolean} silent no error toast (startup restore)
      * @returns {Promise<object | null>}
      */
     const restoreSession = async (silent) => {
+        if (loginRedeemInFlight) {
+            return null;
+        }
+
         const generation = sessionGeneration;
 
         try {
@@ -1043,13 +1053,20 @@ export function createContestController({
                 );
                 // Redeeming replaces the stored token: from here on, results of
                 // the old session (restore, refresh, polls) are dropped.
+                loginRedeemInFlight = true;
                 startNewSession();
                 redeeming = true;
-                const snapshot = await sessionApi.redeemAndLoadContest({
-                    baseUrl,
-                    code,
-                    context,
-                });
+                let snapshot;
+                try {
+                    snapshot = await sessionApi.redeemAndLoadContest({
+                        baseUrl,
+                        code,
+                        context,
+                    });
+                }
+                finally {
+                    loginRedeemInFlight = false;
+                }
                 redeeming = false;
                 sessionEndedPromptShown = false;
                 log('info', `Logged in as ${toText(snapshot.team?.name) || 'your team'} for ${toText(snapshot.contest?.name) || 'the contest'}.`);

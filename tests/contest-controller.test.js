@@ -1425,6 +1425,33 @@ describe('contest controller', () => {
             expect(statusBar.update).toHaveBeenLastCalledWith(fresh);
         });
 
+        it('starts no restore or standings refresh while a login redeems its code', async () => {
+            vi.useFakeTimers();
+            const old = createSnapshot();
+            const redeem = deferred();
+            sessionApi.restoreContestSession.mockResolvedValue(old);
+            sessionApi.refreshContestDetails.mockResolvedValue(old.contest);
+            browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+            sessionApi.redeemAndLoadContest.mockReturnValue(redeem.promise);
+            const controller = buildController({ teamsView: createFakeView(true) });
+            await controller.refreshTree({ silent: true });
+
+            const login = controller.loginTeam();
+            await flushPromises();
+            await controller.refreshTree();
+            await vi.advanceTimersByTimeAsync(15000);
+
+            expect(sessionApi.restoreContestSession).toHaveBeenCalledTimes(1);
+            expect(sessionApi.refreshContestDetails).not.toHaveBeenCalled();
+
+            const fresh = newSessionSnapshot();
+            redeem.resolve(fresh);
+            await login;
+            await controller.refreshTree();
+
+            expect(sessionApi.restoreContestSession).toHaveBeenCalledTimes(2);
+        });
+
         it('stops old polls on a new login and ignores their verdicts', async () => {
             const old = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
             const poll = deferred();
