@@ -327,7 +327,7 @@ export function createContestController({
     /**
      * Let the user choose a contest problem from a quick pick sorted by order.
      * @param {string} placeHolder
-     * @param {string | null} [preferredId] route id of the problem to list first and preselect
+     * @param {string | null} [preferredId] route id of the problem to move first so it is highlighted by default
      * @param {{ unsolvedOnly?: boolean }} [options] `unsolvedOnly` hides solved problems (submit)
      * @returns {Promise<object | null>} null when logged out, empty, all solved, or cancelled
      */
@@ -364,7 +364,9 @@ export function createContestController({
 
         if (preferredIndex >= 0) {
             const [preferred] = items.splice(preferredIndex, 1);
-            items.unshift({ ...preferred, picked: true });
+            // A single-select quick pick highlights its first item, so moving the
+            // preferred problem to the front is what preselects it.
+            items.unshift(preferred);
         }
 
         const picked = await showQuickPick(items, { placeHolder, matchOnDescription: true });

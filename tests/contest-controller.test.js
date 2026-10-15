@@ -990,7 +990,7 @@ describe('contest controller', () => {
             const [items, options] = showQuickPick.mock.calls[0];
             expect(options).toEqual(expect.objectContaining({ placeHolder: 'Submit main.cpp to which problem?' }));
             expect(items.map(item => item.label)).toEqual(['B. Binary Search', 'A. A + B']);
-            expect(items[0].picked).toBe(true);
+            expect(items[0]).not.toHaveProperty('picked');
             expect(sessionApi.submitSolution).toHaveBeenCalledWith(expect.objectContaining({ problemId: 'pb2c3d4e5f6a1' }));
         });
 
@@ -1025,7 +1025,7 @@ describe('contest controller', () => {
 
             const [items] = showQuickPick.mock.calls[0];
             expect(items).toHaveLength(1);
-            expect(items[0].picked).toBeUndefined();
+            expect(items[0].label).toBe('B. Binary Search');
         });
 
         it('says all problems are solved instead of showing an empty submit picker', async () => {
