@@ -781,6 +781,46 @@ describe('contest controller', () => {
             expect(sessionApi.submitSolution).toHaveBeenCalledTimes(1);
         });
 
+        it('refuses a second submit while the first is still being sent, then allows it again', async () => {
+            resolveConfirmBeforeSubmit.mockReturnValue(false);
+            const snapshot = createSnapshot();
+            let resolveFirst;
+            sessionApi.submitSolution
+                .mockReturnValueOnce(new Promise((resolve) => {
+                    resolveFirst = resolve;
+                }))
+                .mockResolvedValue(pending(28));
+            const controller = buildLoggedInController(snapshot);
+
+            const first = controller.submitActiveFile(snapshot.problems[0]);
+            const second = await controller.submitActiveFile(snapshot.problems[0]);
+
+            expect(second).toBeNull();
+            expect(showInformationMessage).toHaveBeenCalledWith('A submission is already being sent. Wait for it to finish.');
+
+            resolveFirst(pending(27));
+            await first;
+            await controller.submitActiveFile(snapshot.problems[0]);
+
+            expect(sessionApi.submitSolution).toHaveBeenCalledTimes(2);
+        });
+
+        it('allows another submit while the previous verdict is still being polled', async () => {
+            resolveConfirmBeforeSubmit.mockReturnValue(false);
+            const snapshot = createSnapshot();
+            sessionApi.submitSolution.mockResolvedValueOnce(pending(27)).mockResolvedValueOnce(pending(28));
+            sessionApi.pollSubmissionResult.mockReturnValue(new Promise(() => {}));
+            const controller = buildLoggedInController(snapshot);
+
+            void controller.submitActiveFile(snapshot.problems[0]);
+            await flushPromises(30);
+            void controller.submitActiveFile(snapshot.problems[0]);
+            await flushPromises(30);
+
+            expect(sessionApi.submitSolution).toHaveBeenCalledTimes(2);
+            expect(showInformationMessage).not.toHaveBeenCalled();
+        });
+
         it('asks which problem from the palette and preselects the one last submitted from this file', async () => {
             const snapshot = createFullSnapshot();
             workspaceStateStore['autojudgeContest.lastProblemByFile'] = { '/workspace/main.cpp': 'pb2c3d4e5f6a1' };

@@ -45,6 +45,7 @@ const SESSION_ENDED_MESSAGE = 'Your session ended. Log in again (ask staff to re
 const HANDOFF_INVALID_MESSAGE = 'The browser login link expired or was already used. Run Log In again.';
 const CONTEST_NOT_STARTED_MESSAGE = 'The contest has not started yet. Refresh once it starts to load the problems.';
 const LOGGED_OUT_MESSAGE = 'Log in to AutoJudge Contest first.';
+const SUBMIT_IN_PROGRESS_MESSAGE = 'A submission is already being sent. Wait for it to finish.';
 
 /**
  * Write one line to the output channel at the given level. A LogOutputChannel
@@ -141,6 +142,9 @@ export function createContestController({
     let standingsTimer = null;
     let explorerTimer = null;
     let sessionEndedPromptShown = false;
+    // Token of the submit currently between its start and the judge POST
+    // response; a second submit is refused meanwhile so it never double-posts.
+    let sendingSubmit = null;
     // Submission id -> in-flight poll promise, so each pending submission is polled once.
     const activePolls = new Map();
     let pollAbort = new AbortController();
@@ -1013,7 +1017,8 @@ export function createContestController({
          * file is the active editor, or the editor-title Uri. Unsaved changes
          * are saved after a prompt and, unless the setting is off, the submit is
          * confirmed. The pending submission shows in the tree and status bar;
-         * the verdict arrives as a toast.
+         * the verdict arrives as a toast. Only one submit runs at a time up
+         * to the judge response; a second one meanwhile is refused.
          * @param {unknown} arg problem, tree item `{ problem }`, editor Uri, or nothing
          * @returns {Promise<object | null>} the final (or still pending) submission
          */
@@ -1021,6 +1026,19 @@ export function createContestController({
             if (!currentSnapshot) {
                 return promptLogIn();
             }
+
+            if (sendingSubmit) {
+                void Promise.resolve(showInformationMessage(SUBMIT_IN_PROGRESS_MESSAGE));
+                return null;
+            }
+
+            const submitToken = {};
+            sendingSubmit = submitToken;
+            const releaseSubmit = () => {
+                if (sendingSubmit === submitToken) {
+                    sendingSubmit = null;
+                }
+            };
 
             try {
                 const source = await readSubmissionSource(isUriLike(arg) ? arg : null);
@@ -1055,6 +1073,8 @@ export function createContestController({
                     filename: source.filename,
                     problemId: resolveRouteId(problem),
                 });
+                // The judge accepted it; polling the verdict must not block another submit.
+                releaseSubmit();
 
                 await rememberProblemForFile(source.uri?.fsPath, problem);
                 await mergeSubmissionIntoSnapshot(problem, submission);
@@ -1069,6 +1089,9 @@ export function createContestController({
             }
             catch (error) {
                 return handleFailure(error);
+            }
+            finally {
+                releaseSubmit();
             }
         },
 
