@@ -48,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Log In checks `autojudgeContest.baseUrl` before the browser opens, so an invalid value is reported without a browser round-trip.
 - A server that does not answer within 20 seconds counts as unreachable, so the views show **Offline** with **Retry** instead of loading forever. Solution uploads get 60 seconds and, on timeout, ask you to check Contest Explorer before submitting again.
 - `PARSING_ERROR` verdicts show as error verdicts.
+- An open submission page now updates itself when the verdict arrives, instead of staying on **Still being judged**.
+- The output diff separates its `-` / `+` markers from the line, so negative numbers no longer read as `--1`.
 - Names from the server are escaped in generated pages, and Windows reserved file names (such as `CON` or `NUL`) get a `_` suffix so their page files can be written.
 
 ## [0.2.0] - 2026-10-14
