@@ -144,8 +144,9 @@ export function renderSubmissionDetails(submission, { problems = [] } = {}) {
 }
 
 /**
- * Render one team's standing: rank, solved count, total time, and the solved
- * problems as a lettered list.
+ * Render one team's standing: rank, solved count (the raw server count, as
+ * everywhere else), total time, and the solved problems it can name as a
+ * lettered list.
  * @param {object} team
  * @param {{ contest?: object, problems?: object[] } | null | undefined} snapshot
  * @returns {string}
@@ -160,8 +161,9 @@ export function renderTeamStandingDetails(team, snapshot) {
     const problems = sortProblems(contest?.problems ?? snapshot?.problems);
     const solvedIds = Array.isArray(standing?.solvedProblemIds) ? standing.solvedProblemIds : [];
     const solvedProblems = problems.filter(problem => solvedIds.includes(resolveRouteId(problem)));
-    // Count only ids that match a contest problem, so the count agrees with the list below.
-    const solvedCount = problems.length ? solvedProblems.length : countSolvedProblems(standing);
+    // The raw server count, like the tree row, status bar and rank order; the
+    // list below only names the solved problems it can resolve.
+    const solvedCount = countSolvedProblems(standing);
     const totalTime = formatMinutes(normalizeStandingScore(standing));
     const name = escapeInline(getTeamPageName(team));
 

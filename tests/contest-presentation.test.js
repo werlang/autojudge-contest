@@ -172,13 +172,13 @@ describe('renderTeamStandingDetails', () => {
         expect(page.indexOf('- A. A + B')).toBeLessThan(page.indexOf('- B. Binary Search'));
     });
 
-    it('counts only solved ids that match a contest problem', () => {
+    it('counts the raw solved ids but lists only the problems it can name', () => {
         const ghost = { publicId: 'tghost0000000', name: 'Ghost', score: 120000, solvedProblemIds: ['paaaaaaaaaaaa', 'pmissing00000'] };
         const contest = { ...CONTEST, teams: [...CONTEST.teams, ghost] };
         const page = renderTeamStandingDetails(ghost, { contest });
 
-        expect(page).toMatch(/^Ghost is ranked #\d+ with 1 problem solved\.$/m);
-        expect(page).toContain('- **Solved:** 1 of 2');
+        expect(page).toMatch(/^Ghost is ranked #\d+ with 2 problems solved\.$/m);
+        expect(page).toContain('- **Solved:** 2 of 2');
         expect(page).toContain('- A. A + B');
         expect(page).not.toContain('pmissing');
     });
