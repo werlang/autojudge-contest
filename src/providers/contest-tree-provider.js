@@ -1,10 +1,19 @@
 import * as vscode from 'vscode';
-import {
-    buildContestHeaderDescription,
-    formatSubmissionStatus,
-} from '../presentation/contest-presentation.js';
+import { formatSubmissionStatus } from '../presentation/contest-presentation.js';
 import { COMMANDS, TREE_CONTEXT } from '../constants.js';
-import { sameEntity } from '../utils/public-id.js';
+import { resolveRouteId, sameEntity } from '../utils/public-id.js';
+import {
+    getContestTiming,
+    getProblemLetter,
+    sortProblems,
+    summarizeProblemSubmissions,
+} from '../utils/contest-progress.js';
+import {
+    formatDuration,
+    formatLocalDateTime,
+    formatMinutes,
+    formatRelativeTime,
+} from '../utils/time-format.js';
 import {
     isErrorSubmission,
     isFailedSubmission,
@@ -13,14 +22,23 @@ import {
     isTimeLimitSubmission
 } from '../utils/submission-status.js';
 
+const SOLVED_MARK = '✓';
+const JUDGING_LABEL = 'Judging…';
+
 /**
- * Provide the contest explorer tree for logged-in contest snapshots.
+ * Provide the contest explorer tree for logged-in contest snapshots: a contest
+ * header with live timing, then one row per problem (letter, title, solved or
+ * attempt state) with that problem's submissions nested newest-first.
  */
 export class ContestTreeProvider {
-    constructor() {
+    /**
+     * @param {{ now?: () => number }} [options] `now` is injectable for tests.
+     */
+    constructor(options = {}) {
         this.listeners = new Set();
         this.snapshot = null;
         this.state = 'loggedOut';
+        this.now = options.now ?? Date.now;
     }
 
     /**
@@ -39,7 +57,8 @@ export class ContestTreeProvider {
     }
 
     /**
-     * Refresh the full tree and optionally update the visible state label.
+     * Refresh the full tree (also re-renders relative times and the countdown)
+     * and optionally update the visible state label.
      * @param {'loggedIn' | 'loggedOut'} [state]
      */
     refresh(state) {
@@ -54,7 +73,7 @@ export class ContestTreeProvider {
 
     /**
      * Replace the visible contest snapshot and refresh the tree.
-     * @param {{ problems: object[], submissions: object[], team: { contest: { publicId: string, name: string }, name: string }, token: string } | null} snapshot
+     * @param {{ problems: object[], submissions: object[], team: object, contest: object, contestNotStarted?: boolean } | null} snapshot
      */
     setSnapshot(snapshot) {
         this.snapshot = snapshot;
@@ -69,21 +88,25 @@ export class ContestTreeProvider {
 
     /**
      * Return the currently rendered contest snapshot.
-     * @returns {{ problems: object[], submissions: object[], team: object, token: string } | null}
+     * @returns {object | null}
      */
     getSnapshot() {
         return this.snapshot;
     }
 
     /**
-     * Create a simple colored circle icon as a data URI for problem nodes.
-     * @param {*} hexColor
-     * @returns 
+     * Create the small balloon-color circle used as a problem's identity icon.
+     * A missing or non-hex color renders a transparent circle.
+     * @param {string | undefined | null} hexColor
+     * @returns {import('vscode').Uri}
      */
     createColoredCircleIcon(hexColor) {
+        const color = typeof hexColor === 'string' && /^#?[0-9a-f]{3,8}$/i.test(hexColor.trim())
+            ? (hexColor.trim().startsWith('#') ? hexColor.trim() : `#${hexColor.trim()}`)
+            : '#00000000';
         const svg = `
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">
-                <circle cx="8" cy="8" r="3" fill="${hexColor || '#00000000'}" />
+                <circle cx="8" cy="8" r="4" fill="${color}" />
             </svg>
         `;
 
@@ -102,59 +125,55 @@ export class ContestTreeProvider {
             return element.children;
         }
 
-        if (!this.snapshot || this.state === 'loggedOut') {
+        if (element || !this.snapshot || this.state === 'loggedOut') {
             return [];
         }
 
-        const problemItems = this.snapshot.problems
-            .slice()
-            .sort((left, right) => (left.order ?? Number.MAX_SAFE_INTEGER) - (right.order ?? Number.MAX_SAFE_INTEGER))
-            .map(problem => {
-                const submissions = this.snapshot.submissions
-                    .filter(submission => sameEntity(submission.problem, problem))
-                    .sort((left, right) => new Date(right.submittedAt).getTime() - new Date(left.submittedAt).getTime())
-                    .map(submission => ({
-                        label: `#${submission.id}`,
-                        description: formatSubmissionStatus(submission.status),
-                        collapsibleState: 0,
-                        contextValue: TREE_CONTEXT.SUBMISSION,
-                        iconPath: getSubmissionIcon(submission.status),
-                        command: {
-                            command: COMMANDS.OPEN_SUBMISSION,
-                            title: 'Open Submission Result',
-                            arguments: [submission],
-                        },
-                        submission,
-                    }));
+        const now = this.now();
+        const header = buildContestHeaderItem(this.snapshot, now);
 
-                return {
-                    label: problem.title.trim(),
-                    description: `${submissions.length} submission${submissions.length === 1 ? '' : 's'}`,
-                    collapsibleState: submissions.length ? 1 : 0,
-                    contextValue: TREE_CONTEXT.PROBLEM,
-                    iconPath: this.createColoredCircleIcon(problem.color),
-                    children: submissions,
-                    problem,
-                };
-            });
+        if (this.snapshot.contestNotStarted) {
+            return [header, buildNotStartedItem()];
+        }
+
+        const problems = sortProblems(this.snapshot.problems);
+        const submissions = Array.isArray(this.snapshot.submissions) ? this.snapshot.submissions : [];
 
         return [
-            // The contest header is a root-level node that surfaces the team and contest name.
-            {
-                label: this.snapshot.contest.name.trim().toUpperCase(),
-                description: buildContestHeaderDescription(this.snapshot.team),
-                collapsibleState: 0,
-                contextValue: TREE_CONTEXT.CONTEST,
-                iconPath: new vscode.ThemeIcon('mortar-board', new vscode.ThemeColor('charts.blue')),
-                tooltip: buildContestHeaderTooltip(this.snapshot.team, this.snapshot.contest),
-                command: {
-                    command: COMMANDS.OPEN_CONTEST_DASHBOARD,
-                    title: 'Open Contest Dashboard',
-                    arguments: [this.snapshot.contest],
-                },
-            },
-            ...(this.snapshot.contestNotStarted ? [buildNotStartedItem()] : problemItems),
+            header,
+            ...problems.map(problem => this.buildProblemItem(problem, problems, submissions, now)),
         ];
+    }
+
+    /**
+     * Build one problem row with its submissions as children.
+     * @param {object} problem
+     * @param {object[]} problems all contest problems, already sorted
+     * @param {object[]} submissions the team's submissions
+     * @param {number} now
+     * @returns {Record<string, unknown>}
+     */
+    buildProblemItem(problem, problems, submissions, now) {
+        const letter = getProblemLetter(problem, problems);
+        const title = resolveProblemTitle(problem, letter);
+        const summary = summarizeProblemSubmissions(problem, submissions);
+        const children = submissions
+            .filter(submission => sameEntity(submission?.problem, problem))
+            .sort((left, right) => toTime(right.submittedAt) - toTime(left.submittedAt))
+            .map(submission => buildSubmissionItem(submission, now));
+        const publicId = resolveRouteId(problem);
+
+        return {
+            id: publicId ? `problem:${publicId}` : undefined,
+            label: letter ? `${letter}. ${title}` : title,
+            description: buildProblemDescription(summary),
+            tooltip: buildProblemTooltip(letter, title, summary),
+            collapsibleState: children.length ? 1 : 0,
+            contextValue: TREE_CONTEXT.PROBLEM,
+            iconPath: this.createColoredCircleIcon(problem?.color),
+            children,
+            problem,
+        };
     }
 
     /**
@@ -168,7 +187,227 @@ export class ContestTreeProvider {
 }
 
 /**
- * Map an AutoJudge submission status to a deterministic tree icon at the VS Code boundary.
+ * Build the contest header row: the contest name, then team and timing.
+ * @param {{ team?: object, contest?: object, contestNotStarted?: boolean }} snapshot
+ * @param {number} now
+ * @returns {Record<string, unknown>}
+ */
+function buildContestHeaderItem(snapshot, now) {
+    const contest = snapshot.contest ?? snapshot.team?.contest ?? null;
+    const contestName = resolveContestName(contest);
+    const teamName = snapshot.team?.name?.toString().trim() || '';
+    const timing = getContestTiming(contest, now);
+    const timingText = describeContestTiming(timing, Boolean(snapshot.contestNotStarted), now);
+    const publicId = resolveRouteId(contest);
+
+    return {
+        id: publicId ? `contest:${publicId}` : 'contest',
+        label: contestName,
+        description: [teamName, timingText].filter(Boolean).join(' · '),
+        collapsibleState: 0,
+        contextValue: TREE_CONTEXT.CONTEST,
+        iconPath: new vscode.ThemeIcon('mortar-board', new vscode.ThemeColor('charts.blue')),
+        tooltip: buildContestHeaderTooltip(contestName, teamName, timing, timingText),
+        command: {
+            command: COMMANDS.OPEN_CONTEST_DASHBOARD,
+            title: 'Open Contest Overview',
+            arguments: [contest],
+        },
+    };
+}
+
+/**
+ * Describe where the contest is in time: `2h 12m left`, `Ended`,
+ * `Starts in 25m`, or `Not started`. Returns an empty string when the contest
+ * is running but its window is unknown, so no misleading state is shown.
+ * @param {ReturnType<typeof getContestTiming>} timing
+ * @param {boolean} notStartedFlag the server reported the contest has not started
+ * @param {number} [now=Date.now()]
+ * @returns {string}
+ */
+export function describeContestTiming(timing, notStartedFlag, now = Date.now()) {
+    if (timing.phase === 'notStarted') {
+        const untilStartMs = timing.startTime ? timing.startTime.getTime() - now : 0;
+        if (untilStartMs > 0) {
+            return `Starts in ${formatDuration(untilStartMs)}`;
+        }
+
+        // Without a start time we only claim "Not started" when the server said so.
+        return notStartedFlag || timing.startTime ? 'Not started' : '';
+    }
+
+    if (notStartedFlag) {
+        return 'Not started';
+    }
+
+    if (timing.phase === 'ended') {
+        return 'Ended';
+    }
+
+    return timing.remainingMs == null ? 'Running' : `${formatDuration(timing.remainingMs)} left`;
+}
+
+/**
+ * Build the contest header tooltip: name, team, state, and local start/end times.
+ * @param {string} contestName
+ * @param {string} teamName
+ * @param {ReturnType<typeof getContestTiming>} timing
+ * @param {string} timingText
+ * @returns {string}
+ */
+function buildContestHeaderTooltip(contestName, teamName, timing, timingText) {
+    const lines = [contestName];
+
+    if (teamName) {
+        lines.push(`Team: ${teamName}`);
+    }
+
+    if (timingText) {
+        lines.push(`Status: ${timingText}`);
+    }
+
+    if (timing.startTime) {
+        lines.push(`Starts: ${formatLocalDateTime(timing.startTime)}`);
+    }
+
+    if (timing.endTime) {
+        lines.push(`Ends: ${formatLocalDateTime(timing.endTime)}`);
+    }
+
+    return lines.join('\n');
+}
+
+/**
+ * Describe a problem's state for the team: `✓ Solved`, `✓ Solved · 3 attempts`,
+ * `Judging…`, `2 attempts`, or nothing when untouched.
+ * @param {ReturnType<typeof summarizeProblemSubmissions>} summary
+ * @returns {string}
+ */
+function buildProblemDescription(summary) {
+    const parts = [];
+
+    if (summary.solved) {
+        parts.push(`${SOLVED_MARK} Solved`);
+    }
+
+    if (summary.pending) {
+        parts.push(JUDGING_LABEL);
+    }
+
+    // A first-try solve or a lone pending attempt needs no attempt count.
+    const showAttempts = summary.solved || summary.pending ? summary.attempts > 1 : summary.attempts > 0;
+    if (showAttempts) {
+        parts.push(formatAttempts(summary.attempts));
+    }
+
+    return parts.join(' · ');
+}
+
+/**
+ * Build the problem tooltip: letter and title, attempts, and first accepted time.
+ * @param {string} letter
+ * @param {string} title
+ * @param {ReturnType<typeof summarizeProblemSubmissions>} summary
+ * @returns {string}
+ */
+function buildProblemTooltip(letter, title, summary) {
+    const lines = [letter ? `Problem ${letter}: ${title}` : title];
+
+    if (summary.solved) {
+        lines.push(`${SOLVED_MARK} Solved in ${formatAttempts(summary.attempts)}`);
+        const accepted = summary.firstAccepted;
+        const acceptedAt = formatLocalDateTime(accepted?.submittedAt, '');
+        const contestTime = accepted?.score != null ? ` (${formatMinutes(accepted.score)})` : '';
+        if (acceptedAt) {
+            lines.push(`First accepted: ${acceptedAt}${contestTime}`);
+        }
+    } else if (summary.attempts) {
+        lines.push(`Not solved yet · ${formatAttempts(summary.attempts)}`);
+    } else {
+        lines.push('No submissions yet');
+    }
+
+    if (summary.pending) {
+        lines.push(`${JUDGING_LABEL} ${summary.pending} pending`);
+    }
+
+    return lines.join('\n');
+}
+
+/**
+ * Build one submission row: `#id` with `Status · 5 min ago`.
+ * @param {object} submission
+ * @param {number} now
+ * @returns {Record<string, unknown>}
+ */
+function buildSubmissionItem(submission, now) {
+    const status = formatSubmissionStatus(submission.status);
+    const relative = formatRelativeTime(submission.submittedAt, now);
+
+    return {
+        id: submission.id != null ? `submission:${submission.id}` : undefined,
+        label: `#${submission.id ?? '?'}`,
+        description: [status, relative].filter(Boolean).join(' · '),
+        tooltip: buildSubmissionTooltip(submission, status),
+        collapsibleState: 0,
+        contextValue: hasComparableOutput(submission)
+            ? TREE_CONTEXT.SUBMISSION_WITH_OUTPUT
+            : TREE_CONTEXT.SUBMISSION,
+        iconPath: getSubmissionIcon(submission.status),
+        command: {
+            command: COMMANDS.OPEN_SUBMISSION,
+            title: 'Open Submission Result',
+            arguments: [submission],
+        },
+        submission,
+    };
+}
+
+/**
+ * Build the submission tooltip: status, local time, time or penalty, file, language.
+ * @param {object} submission
+ * @param {string} status formatted status
+ * @returns {string}
+ */
+function buildSubmissionTooltip(submission, status) {
+    const lines = [`#${submission.id ?? '?'} · ${status}`];
+    const submittedAt = formatLocalDateTime(submission.submittedAt, '');
+
+    if (submittedAt) {
+        lines.push(`Submitted: ${submittedAt}`);
+    }
+
+    if (submission.score != null && !isPendingSubmission(submission.status)) {
+        const label = isPassedSubmission(submission.status) ? 'Time' : 'Penalty';
+        lines.push(`${label}: ${formatMinutes(submission.score)}`);
+    }
+
+    const filename = (submission.filename ?? submission.fileName)?.toString().trim();
+    if (filename) {
+        lines.push(`File: ${filename}`);
+    }
+
+    const language = submission.language?.toString().trim();
+    if (language) {
+        lines.push(`Language: ${language}`);
+    }
+
+    return lines.join('\n');
+}
+
+/**
+ * Check whether a submission carries expected or received output to diff.
+ * @param {object} submission
+ * @returns {boolean}
+ */
+function hasComparableOutput(submission) {
+    const hint = submission?.hint;
+    return Boolean(hint) && (hint.expected != null || hint.received != null);
+}
+
+/**
+ * Map an AutoJudge submission status to a tree icon. Every failure verdict uses
+ * the failure color; only pending uses yellow, and unknown statuses stay neutral.
  * @param {string | undefined | null} status
  * @returns {import('vscode').ThemeIcon}
  */
@@ -182,18 +421,18 @@ function getSubmissionIcon(status) {
     }
 
     if (isTimeLimitSubmission(status)) {
-        return new vscode.ThemeIcon('clockface', new vscode.ThemeColor('charts.yellow'));
+        return new vscode.ThemeIcon('watch', new vscode.ThemeColor('testing.iconFailed'));
+    }
+
+    if (isErrorSubmission(status)) {
+        return new vscode.ThemeIcon('warning', new vscode.ThemeColor('testing.iconFailed'));
     }
 
     if (isPendingSubmission(status)) {
         return new vscode.ThemeIcon('loading~spin', new vscode.ThemeColor('charts.yellow'));
     }
 
-    if (isErrorSubmission(status)) {
-        return new vscode.ThemeIcon('warning-compact', new vscode.ThemeColor('testing.iconFailed'));
-    }
-
-    return new vscode.ThemeIcon('error', new vscode.ThemeColor('testing.iconFailed'));
+    return new vscode.ThemeIcon('circle-outline');
 }
 
 /**
@@ -203,6 +442,7 @@ function getSubmissionIcon(status) {
  */
 function buildNotStartedItem() {
     return {
+        id: 'contest-not-started',
         label: 'Contest has not started yet',
         description: 'Refresh when it starts',
         collapsibleState: 0,
@@ -211,18 +451,39 @@ function buildNotStartedItem() {
 }
 
 /**
- * Build the richer contest-header tooltip shown in the explorer.
- * @param {{ contest?: { name?: string }, name?: string }} team
- * @param {{ name?: string }} contest
+ * Resolve a problem's display title, falling back to `Problem <letter>`.
+ * @param {object} problem
+ * @param {string} letter
  * @returns {string}
  */
-function buildContestHeaderTooltip(team, contest) {
-    const tooltipLines = [contest?.name?.toString().trim() || 'Contest'];
-    const description = buildContestHeaderDescription(team);
+function resolveProblemTitle(problem, letter) {
+    return problem?.title?.toString().trim() || (letter ? `Problem ${letter}` : 'Problem');
+}
 
-    if (description) {
-        tooltipLines.push(description);
-    }
+/**
+ * Resolve the contest display name as sent by the server, falling back to `Contest`.
+ * @param {object | null} contest
+ * @returns {string}
+ */
+function resolveContestName(contest) {
+    return contest?.name?.toString().trim() || 'Contest';
+}
 
-    return tooltipLines.join('\n');
+/**
+ * Format an attempt count (`1 attempt`, `3 attempts`).
+ * @param {number} count
+ * @returns {string}
+ */
+function formatAttempts(count) {
+    return `${count} attempt${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * Convert a timestamp to milliseconds, treating invalid values as 0 (oldest).
+ * @param {unknown} value
+ * @returns {number}
+ */
+function toTime(value) {
+    const time = new Date(value).getTime();
+    return Number.isNaN(time) ? 0 : time;
 }
