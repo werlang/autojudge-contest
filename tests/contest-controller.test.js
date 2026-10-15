@@ -848,7 +848,7 @@ describe('contest controller', () => {
             expect(revealSubmission).not.toHaveBeenCalled();
         });
 
-        it('keeps submitting and shows no toast when the reveal fails', async () => {
+        it('keeps submitting, logs nothing itself, and shows no toast when the reveal fails', async () => {
             const snapshot = createSnapshot();
             const revealSubmission = vi.fn().mockRejectedValue(new Error('tree not ready'));
             sessionApi.submitSolution.mockResolvedValue(pending());
@@ -856,9 +856,10 @@ describe('contest controller', () => {
             const result = await buildLoggedInController(snapshot, { revealSubmission }).submitActiveFile(snapshot.problems[0]);
 
             expect(result).toEqual(pending());
-            await vi.waitFor(() => expect(outputChannel.appendLine).toHaveBeenCalledWith(
-                expect.stringContaining('Could not reveal submission #27: tree not ready'),
-            ));
+            await vi.waitFor(() => expect(revealSubmission).toHaveBeenCalledWith(27));
+            await Promise.resolve();
+            // Error logging belongs to the injected reveal (covered in the commands tests).
+            expect(outputChannel.appendLine).not.toHaveBeenCalledWith(expect.stringContaining('Could not reveal'));
             expect(showErrorMessage).not.toHaveBeenCalled();
             expect(toastCalls()).toEqual([]);
         });

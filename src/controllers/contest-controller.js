@@ -108,7 +108,7 @@ export function logToChannel(channel, level, message) {
  * @param {{ setSnapshot: (snapshot: object | null) => void, getSnapshot?: () => object | null }} options.treeProvider
  * @param {{ update: (snapshot: object | null) => void, setPendingCount: (count: number) => void } | null} [options.statusBar]
  * @param {{ visible?: boolean, onDidChangeVisibility?: Function } | null} [options.explorerView]
- * @param {(submissionId: string | number) => Promise<void> | void} [options.revealSubmission] scrolls a new submission into view in the explorer (no-op by default; failures are logged, never shown)
+ * @param {(submissionId: string | number) => Promise<void> | void} [options.revealSubmission] scrolls a new submission into view in the explorer (no-op by default; it owns its own error handling and logging)
  * @param {{ visible?: boolean, onDidChangeVisibility?: Function } | null} [options.teamsView]
  * @param {(fsPath: string) => unknown} [options.toFileUri] converts a file path to a `vscode.Uri` for `vscode.diff`
  * @param {{ writePage: Function, writeComparison: Function }} [options.pageFiles] generated-file writer; defaults to one under the extension storage root
@@ -714,14 +714,16 @@ export function createContestController({
 
     /**
      * Ask the explorer to reveal a just-submitted row (a collapsed problem
-     * would otherwise hide it). Fire-and-forget: a failed reveal is only
-     * logged at debug level and never blocks the submit flow or shows a toast.
+     * would otherwise hide it). Fire-and-forget: it never blocks the submit
+     * flow or shows a toast. The injected `revealSubmission` owns error
+     * handling and logging (see `createSubmissionReveal`); the empty catch only
+     * keeps a misbehaving callback from becoming an unhandled rejection.
      * @param {string | number} submissionId
      */
     const revealNewSubmission = (submissionId) => {
         void Promise.resolve()
             .then(() => revealSubmission(submissionId))
-            .catch((error) => log('debug', `Could not reveal submission #${submissionId}: ${error?.message ?? error}`));
+            .catch(() => {});
     };
 
     /**
