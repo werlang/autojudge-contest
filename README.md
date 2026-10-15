@@ -3,7 +3,7 @@
 Compete in AutoJudge programming contests without leaving VS Code: read the problems, test locally, submit, and follow your verdicts and the scoreboard from the editor.
 
 <p align="center">
-  <img src="media/demo.gif" alt="Logging in with the team card, opening a problem statement, submitting the active file, and getting an Accepted verdict while the standings update" width="900">
+  <img src="media/demo.gif" alt="Opening a problem statement, exporting its public test cases, inspecting the diff of a Wrong Answer, submitting the fix, and getting Accepted while the team climbs the standings" width="900">
 </p>
 
 ## Why use it
@@ -40,10 +40,10 @@ Compete in AutoJudge programming contests without leaving VS Code: read the prob
 ### Verdicts with an output diff
 
 <p align="center">
-  <img src="media/verdict.png" alt="Verdict notification with View Details and Compare Output actions, and a submission page showing an inline diff of expected versus received output">
+  <img src="media/verdict.png" alt="An Accepted notification with View Details over a Wrong Answer submission page that shows an inline diff of the expected output against the received output">
 </p>
 
-- Each verdict arrives as a notification with **View Details** and **Compare Output**.
+- Each verdict arrives as a notification with **View Details**, plus **Compare Output** when the judge reported both the expected and the received output.
 - The submission page shows the verdict, time or penalty, the judge's hint, and an inline diff of expected versus your output, followed by the raw outputs.
 - **Compare Output** opens the same comparison in VS Code's side-by-side diff editor.
 - Submissions still being judged keep being checked, even after you restart VS Code.
@@ -51,7 +51,7 @@ Compete in AutoJudge programming contests without leaving VS Code: read the prob
 ### Submitting
 
 <p align="center">
-  <img src="media/submit.png" alt="Submit button in the editor title bar, the problem picker with the last-used problem first, and the submit confirmation dialog">
+  <img src="media/submit.png" alt="The submit confirmation dialog naming the file and the problem, with the submit button in the editor title bar">
 </p>
 
 - Submit from the **cloud upload** icon on a problem row, from the same icon in the editor title bar, or with **AutoJudge Contest: Submit Active File…**.
