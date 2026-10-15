@@ -16,6 +16,7 @@ import {
     formatRelativeTime,
 } from '../utils/time-format.js';
 import {
+    hasComparableOutput,
     isErrorSubmission,
     isFailedSubmission,
     isPassedSubmission,
@@ -396,17 +397,6 @@ function buildSubmissionTooltip(submission, status) {
     }
 
     return lines.join('\n');
-}
-
-/**
- * Check whether a submission carries both expected and received output to diff,
- * matching the submission page tip and the compare command.
- * @param {object} submission
- * @returns {boolean}
- */
-function hasComparableOutput(submission) {
-    const hint = submission?.hint;
-    return Boolean(hint) && hint.expected != null && hint.received != null;
 }
 
 /**

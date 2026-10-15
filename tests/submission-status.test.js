@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    hasComparableOutput,
     isErrorSubmission,
     isFailedSubmission,
     isPassedSubmission,
@@ -29,5 +30,13 @@ describe('submission status classification', () => {
             expect([isPassedSubmission, isFailedSubmission, isTimeLimitSubmission, isErrorSubmission, isPendingSubmission]
                 .some(check => check(status))).toBe(false);
         }
+    });
+
+    it('treats a submission as comparable only when both expected and received output exist', () => {
+        expect(hasComparableOutput({ hint: { expected: '3\n', received: '' } })).toBe(true);
+        expect(hasComparableOutput({ hint: { expected: '3\n' } })).toBe(false);
+        expect(hasComparableOutput({ hint: { received: '4\n' } })).toBe(false);
+        expect(hasComparableOutput({ hint: null })).toBe(false);
+        expect(hasComparableOutput(null)).toBe(false);
     });
 });

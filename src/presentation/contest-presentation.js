@@ -1,4 +1,4 @@
-import { isPassedSubmission, isPendingSubmission } from '../utils/submission-status.js';
+import { hasComparableOutput, isPassedSubmission, isPendingSubmission } from '../utils/submission-status.js';
 import { countSolvedProblems, findTeamStanding, normalizeStandingScore, resolveStandingTeams } from '../utils/standings.js';
 import { resolveRouteId, sameEntity } from '../utils/public-id.js';
 import { formatDuration, formatLocalDateTime, formatMinutes, formatRelativeTime } from '../utils/time-format.js';
@@ -129,7 +129,7 @@ export function renderSubmissionDetails(submission, { problems = [] } = {}) {
     const hasReceived = hint.received != null;
     if (hasExpected || hasReceived) {
         lines.push('', '## Expected vs received output');
-        if (hasExpected && hasReceived) {
+        if (hasComparableOutput(submission)) {
             lines.push('', 'For a side-by-side diff, right-click the submission in Contest Explorer and choose **Compare Expected and Received Output**.');
         }
         if (hasExpected) {

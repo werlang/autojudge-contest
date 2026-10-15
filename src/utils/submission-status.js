@@ -48,3 +48,14 @@ export function isPassedSubmission(status) {
 export function isPendingSubmission(status) {
     return PENDING_STATUSES.has((status || '').toString().trim().toUpperCase());
 }
+/**
+ * Check whether a submission carries both expected and received output, the
+ * two sides of the compare diff. Shared by the compare command, the tree
+ * context value and the submission page tip so they always agree.
+ * @param {object | null | undefined} submission
+ * @returns {boolean}
+ */
+export function hasComparableOutput(submission) {
+    const hint = submission?.hint;
+    return Boolean(hint) && hint.expected != null && hint.received != null;
+}

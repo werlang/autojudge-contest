@@ -13,7 +13,7 @@ import {
 } from '../presentation/contest-presentation.js';
 import { HANDOFF_INVALID_CODE, INVALID_SETTING_CODE, isSessionEnded } from '../services/contest-api.js';
 import { BrowserLoginError, LOGIN_FAILURE } from '../services/browser-login.js';
-import { isPassedSubmission, isPendingSubmission } from '../utils/submission-status.js';
+import { hasComparableOutput, isPassedSubmission, isPendingSubmission } from '../utils/submission-status.js';
 import { resolveRouteId } from '../utils/public-id.js';
 import { getContestTiming, sortProblems, summarizeProblemSubmissions } from '../utils/contest-progress.js';
 import { extractPublicCases } from '../workspace/contest-public-cases.js';
@@ -1387,17 +1387,6 @@ function isUriLike(value) {
         && typeof value === 'object'
         && typeof value.scheme === 'string'
         && typeof value.fsPath === 'string';
-}
-
-/**
- * Check whether a submission carries both expected and received output, the
- * two sides of the diff.
- * @param {object} submission
- * @returns {boolean}
- */
-function hasComparableOutput(submission) {
-    const hint = submission?.hint;
-    return Boolean(hint) && hint.expected != null && hint.received != null;
 }
 
 /**
