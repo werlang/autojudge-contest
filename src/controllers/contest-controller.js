@@ -1049,6 +1049,8 @@ export function createContestController({
             // A new login starts a new session, so a later session end may prompt again.
             sessionEndedPromptShown = false;
             let redeeming = false;
+            // Id of this login once its code is redeemed; null before that.
+            let loginId = null;
 
             try {
                 // Check the API setting before the browser round-trip so an
@@ -1061,7 +1063,7 @@ export function createContestController({
                 // Redeeming replaces the stored token: from here on, results of
                 // the old session (restore, refresh, polls) are dropped.
                 loginRedeemsInFlight += 1;
-                const loginId = ++latestLoginId;
+                loginId = ++latestLoginId;
                 startNewSession();
                 redeeming = true;
                 let snapshot;
@@ -1090,10 +1092,19 @@ export function createContestController({
                 return snapshot;
             }
             catch (error) {
+                // A newer login superseded this one: its session owns the views
+                // and token now, so this failure must not clear that token or
+                // toast. Only the resume-polls guard below may still apply.
+                const superseded = loginId !== null && loginId !== latestLoginId;
                 // A failed redeem keeps the shown snapshot; resume its verdict
                 // polls unless another login is still redeeming (it decides).
                 if (redeeming && loginRedeemsInFlight === 0 && currentSnapshot && !isSessionEnded(error)) {
                     pollPendingSubmissions();
+                }
+
+                if (superseded) {
+                    log('info', 'Login superseded by a newer login.');
+                    return null;
                 }
 
                 if (error instanceof BrowserLoginError && (error.reason === LOGIN_FAILURE.CANCELLED || error.reason === LOGIN_FAILURE.SUPERSEDED)) {

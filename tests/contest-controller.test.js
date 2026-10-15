@@ -1557,6 +1557,30 @@ describe('contest controller', () => {
             expect(loggedIn).toHaveLength(1);
         });
 
+        it.each([
+            ['an ended-session error', apiError(401, 'SESSION_ENDED', 'ended')],
+            ['a network error', new Error('fetch failed')],
+        ])('ignores %s from a login that a newer login superseded', async (_label, failure) => {
+            const redeemA = deferred();
+            const snapshotB = newSessionSnapshot();
+            browserLogin.waitForHandoffCode.mockResolvedValueOnce('code-a').mockResolvedValueOnce('code-b');
+            sessionApi.redeemAndLoadContest.mockReturnValueOnce(redeemA.promise).mockResolvedValueOnce(snapshotB);
+            const controller = buildController();
+
+            const loginA = controller.loginTeam();
+            await flushPromises();
+            await controller.loginTeam();
+            redeemA.reject(failure);
+            await expect(loginA).resolves.toBeNull();
+
+            // B's token and views stay; A's failure neither clears nor toasts.
+            expect(sessionApi.clearStoredSession).not.toHaveBeenCalled();
+            expect(showWarningMessage).not.toHaveBeenCalled();
+            expect(showErrorMessage).not.toHaveBeenCalled();
+            expect(setContext).toHaveBeenLastCalledWith('autojudgeContest.state', 'loggedIn');
+            expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(snapshotB);
+        });
+
         it('keeps the new token when an upload from the old session ends with SESSION_ENDED', async () => {
             resolveConfirmBeforeSubmit.mockReturnValue(false);
             const old = createSnapshot();
