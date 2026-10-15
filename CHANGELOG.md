@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-15
+
 ### Added
 
 - **Compare Expected and Received Output** (`autojudgeContest.compareSubmissionOutput`) opens a diff of a submission's expected and received output, from the Contest Explorer and from the verdict notification.
