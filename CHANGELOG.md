@@ -12,14 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Compare Expected and Received Output** (`autojudgeContest.compareSubmissionOutput`) opens a diff of a submission's expected and received output, from the Contest Explorer and from the verdict notification.
 - `autojudgeContest.confirmBeforeSubmit` setting (default `true`) to ask before submitting the active file. Unsaved files are always confirmed before they are saved and submitted.
 - Contest status bar item with the time left, your rank, and the number of submissions being judged. Clicking it opens the Contest Overview.
-- The contest header in Contest Explorer shows the team and the time left, and opens the Contest Overview when clicked.
-- Problem quick pick for **Submit Active File…**, **Open Problem Statement**, and **Export Public Test Cases** when they run without a selection. The problem a file was last submitted to is listed first.
+- The contest header in Contest Explorer shows the contest and your team, and opens the Contest Overview when clicked.
+- Problem quick pick for **Submit Active File…**, **Open Problem Statement**, and **Export Public Test Cases** when they run without a selection. The problem a file was last submitted to is listed first, and solved problems are left out of the **Submit Active File…** list.
 - Verdict notifications with **View Details** and **Compare Output** actions. Submissions still being judged are polled automatically, including after a restart.
-- Contest Explorer shows problem letters, solved or attempt counts, a **Judging** label, and how long ago each submission was made. Time-limit and error verdicts have their own icons.
-- Standings show rank numbers, highlight your team, and show a notice while the scoreboard is frozen.
+- Contest Explorer shows problem letters, a balloon icon that is filled once a problem is solved (a hollow ring until then), attempt counts, a **Judging** label, and how long ago each submission was made. Time-limit and error verdicts have their own icons. A problem expands to show a new submission after you submit it, and a problem with a pending verdict opens expanded.
+- Standings show rank numbers, highlight your team, and show a notice while the scoreboard is frozen. Long team names are shortened (the full name is in the tooltip), and teams with no solved problems show `0 solved`.
 - Loading and Offline states for both sidebar views. Offline keeps your session and offers **Retry**.
 - **Submit Active File…** in the editor title bar for supported source files, and right-click menus on problems, submissions, the contest header, and teams.
 - Export asks for a folder when the active file and the workspace do not give one, asks before replacing existing files, and offers **Reveal in Explorer** and **Open First Case** once it finishes.
+- Problem pages show each public test case as a numbered Input and Output code block you can copy.
+- Submission pages show an inline diff of expected versus your output, followed by the raw outputs. **Compare Expected and Received Output** still opens the side-by-side diff.
 
 ### Changed
 
@@ -34,9 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Submitting to a problem the team has already solved is refused with an info message, before the confirmation. The confirmation says a rejected attempt adds penalty only if the problem is solved later.
 - A second submission is refused with an info message while the previous one is still being sent to the judge.
 - Pending verdicts share one poll loop: one request per interval covers every pending submission, network errors are retried, and a verdict still pending after 2 minutes is checked again 30 seconds later.
+- The submit confirmation is an information dialog rather than a warning.
+- When every problem is solved, Submit Active File… says **All problems are solved.** instead of opening a picker.
 
 ### Fixed
 
+- The status bar countdown was missing after a window reload until the sidebar was opened. The extension now activates on startup, so the saved session restores on its own.
 - Standings ranked the slowest team first. Teams are now ranked by solved problems, then by lowest total time, and tied teams share a rank.
 - An invalid `autojudgeContest.baseUrl` prevented the extension from activating. Activation now succeeds; the error appears when the server is needed, with an **Open Settings** action.
 - Log In checks `autojudgeContest.baseUrl` before the browser opens, so an invalid value is reported without a browser round-trip.
