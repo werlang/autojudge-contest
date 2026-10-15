@@ -9,10 +9,11 @@ Use this checklist when a contest-extension runtime change cannot be fully prove
 3. In the logged-out state, confirm the views show no Refresh or Log Out buttons in their title bars, and that the welcome action starts the browser login.
 4. Run `AutoJudge Contest: Log In`, complete the team login in the browser, confirm the connection, and confirm VS Code returns logged in with the contest header and the status bar item.
 5. Inspect the `AutoJudge Contest` output channel. It should be a log with timestamps, with short login or refresh messages that do not expose passwords, tokens, or raw authorization headers.
-6. Confirm the Contest Explorer shows the contest header (name, team, time left), problems labeled `A.`, `B.`, … sorted by `order`, and each problem's submissions nested beneath it, newest first.
+6. Confirm the Contest Explorer shows the contest header (name and team; time left is in the status bar), problems labeled `A.`, `B.`, … sorted by `order`, and each problem's submissions nested beneath it, newest first.
 7. Confirm the Standings view ranks teams by solved problems, then lowest total time, and marks your team with `(you)`.
 8. Run `AutoJudge Contest: Refresh` (or the Refresh button in a view title) and confirm both views reload without duplicated nodes or stale state.
-9. Run `AutoJudge Contest: Log Out` from the palette and from the `…` menu of each view. Confirm the stored token is cleared on this computer and the views return to the logged-out welcome.
+9. While still logged in, run `Developer: Reload Window` without clicking the `AutoJudge Contest` icon. Confirm the status bar item returns on its own with the time left and your rank, and that the Contest Explorer loads without a manual Refresh.
+10. Run `AutoJudge Contest: Log Out` from the palette and from the `…` menu of each view. Confirm the stored token is cleared on this computer and the views return to the logged-out welcome.
 
 ## Failure-Path Checks
 
@@ -27,27 +28,29 @@ Use this checklist when a contest-extension runtime change cannot be fully prove
 
 ## Explorer Command Checks
 
-1. Confirm problem nodes expand only when they have submissions, and submission nodes appear only beneath their owning problem.
-2. Hover a problem and confirm three inline actions appear: the book (Open Problem Statement), the beaker (Export Public Test Cases), and the cloud upload (Submit Active File…). Hover a submission and confirm the compare icon appears only for submissions that include both expected and received output.
-3. Run `Open Problem Statement` on a problem item and confirm it writes a page under the extension's storage folder (`problem-previews`, not the workspace) and opens it in the Markdown preview. The page is named after the problem, such as `A. <Title>`.
-4. Run `Submit Active File…` from a problem item with a saved supported source file open. Confirm the confirmation prompt names the file and the problem, the submission appears under the owning problem with a **Judging** label, the status bar shows the judging count, and the verdict notification offers **View Details** (and **Compare Output** when output exists). The confirmation detail should say a rejected attempt adds penalty only if you solve the problem later. Run the same file again and confirm the problem you last submitted it to is listed first in the quick pick. Once a problem shows **✓ Solved**, submit to it again and confirm the info message `<problem> is already solved.` appears with no prompt. While a submission is still being sent, trigger a second submit and confirm `A submission is already being sent. Wait for it to finish.` appears.
-5. With the file unsaved, confirm the prompt offers **Save and Submit** and that the saved content is what gets judged.
-6. Run `Submit Active File…` from the Command Palette and from the editor title button (only for supported extensions). Confirm the palette asks which problem first.
-7. Set `autojudgeContest.confirmBeforeSubmit` to `false` and confirm a saved file submits without the prompt. An unsaved file still prompts.
-8. Run `Export Public Test Cases` and confirm the folder rule: the active file's folder, else the only workspace folder, else an **Export Here** dialog. Files should be named `<problem title>-testcase-01.in` and `.out`, numbered from `01`. Export again and confirm the **Replace** prompt appears. After export, confirm **Reveal in Explorer** and **Open First Case** work.
-9. Run `Open Submission` on a submission item and confirm the page `Submission <id> · <problem>` opens, with the verdict, time or penalty, file, language, judge hint, and expected versus received output when present.
-10. Run `Compare Expected and Received Output` on a submission with output and confirm a diff opens between the `expected` and `received` text files in the `submission-output` folder of the storage root.
-11. Run `Open Team Details` from a Standings row and confirm a team page opens with rank, solved count, total time, and solved problems. Confirm the output channel is not cleared.
-12. Run `Open Contest Overview` from the contest header, from a click on the status bar item, and from the palette. Confirm the page shows phase, start and end, penalty, freeze, and your team's position.
-13. Confirm `Open Submission`, `Open Team Details`, and `Compare Expected and Received Output` are not listed in the Command Palette.
-14. Confirm no `.autojudge-contest` folder appears in the project after these actions. Generated pages and compare files belong to the storage root.
-15. If a future task changes one of these command contracts, update only the affected check while keeping the auth, ordering, and stale-session checks above.
+1. Confirm problem nodes expand only when they have submissions, and submission nodes appear only beneath their owning problem. A problem with a pending verdict opens expanded when it first appears.
+2. Confirm each problem's balloon icon is filled once the problem is solved and a hollow ring until then. Its description shows only `Judging…` while a submission is pending, the attempt count while it is unsolved, and nothing once it is solved.
+3. Hover a problem and confirm three inline actions appear: the book (Open Problem Statement), the beaker (Export Public Test Cases), and the cloud upload (Submit Active File…). Hover a submission and confirm the compare icon appears only for submissions that include both expected and received output.
+4. Run `Open Problem Statement` on a problem item and confirm it writes a page under the extension's storage folder (`problem-previews`, not the workspace) and opens it in the Markdown preview. The page is named after the problem, such as `A. <Title>`. Each public test case appears as a numbered `Case N` section with copyable Input and Output blocks.
+5. Run `Submit Active File…` from a problem item with a saved supported source file open. Confirm the confirmation prompt names the file and the problem, the problem expands to show the submission with a **Judging** label, the status bar shows the judging count, and the verdict notification offers **View Details** (and **Compare Output** when output exists). The confirmation detail should say a rejected attempt adds penalty only if you solve the problem later. Run the same file again and confirm the problem you last submitted it to is listed first in the quick pick, and that solved problems are not listed. Submit to a solved problem from its row and confirm the info message `<problem> is already solved.` appears with no prompt. While a submission is still being sent, trigger a second submit and confirm `A submission is already being sent. Wait for it to finish.` appears.
+6. With the file unsaved, confirm the prompt offers **Save and Submit** and that the saved content is what gets judged.
+7. Run `Submit Active File…` from the Command Palette and from the editor title button (only for supported extensions). Confirm the palette asks which problem first, and that solved problems are not listed. If every problem is solved, confirm the info message `All problems are solved.` appears instead of a picker.
+8. Set `autojudgeContest.confirmBeforeSubmit` to `false` and confirm a saved file submits without the prompt. An unsaved file still prompts.
+9. Run `Export Public Test Cases` and confirm the folder rule: the active file's folder, else the only workspace folder, else an **Export Here** dialog. Files should be named `<problem title>-testcase-01.in` and `.out`, numbered from `01`. Export again and confirm the **Replace** prompt appears. After export, confirm **Reveal in Explorer** and **Open First Case** work.
+10. Run `Open Submission` on a submission item and confirm the page `Submission <id> · <problem>` opens, with the verdict, time or penalty, file, language, judge hint, an inline `Output difference` section (`-` expected, `+` your output), and the raw expected and received outputs when present.
+11. Run `Compare Expected and Received Output` on a submission with output and confirm a diff opens between the `expected` and `received` text files in the `submission-output` folder of the storage root.
+12. Run `Open Team Details` from a Standings row and confirm a team page opens with rank, solved count, total time, and solved problems. Confirm the output channel is not cleared.
+13. Run `Open Contest Overview` from the contest header, from a click on the status bar item, and from the palette. Confirm the page shows phase, start and end, penalty, freeze, and your team's position.
+14. Confirm `Open Submission`, `Open Team Details`, and `Compare Expected and Received Output` are not listed in the Command Palette.
+15. Confirm no `.autojudge-contest` folder appears in the project after these actions. Generated pages and compare files belong to the storage root.
+16. If a future task changes one of these command contracts, update only the affected check while keeping the auth, ordering, and stale-session checks above.
 
 ## Standings and Status Bar Checks
 
 1. Confirm showing the Standings view refreshes it at once, and that it keeps refreshing every 15 seconds while visible and every 60 seconds while hidden.
 2. Confirm the status bar shows the time left, your rank (`#n`), and `Judging N` while a submission is pending. It hides when logged out, and it is highlighted during the last 15 minutes of a running contest.
 3. Confirm a frozen scoreboard shows the **Scoreboard frozen** notice above the teams.
+4. Confirm a team name longer than 24 characters is cut with `…` in its row, with the full name in the tooltip, and a team with no solved problems shows `0 solved`.
 
 ## Manifest Coupling Checks
 
