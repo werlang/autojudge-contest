@@ -27,6 +27,12 @@ const createTreeView = vi.fn((viewId, options) => {
 
 const registerUriHandler = vi.fn(() => ({ dispose: vi.fn() }));
 
+const createStatusBarItem = vi.fn(() => ({
+    dispose: vi.fn(),
+    hide: vi.fn(),
+    show: vi.fn(),
+}));
+
 const getConfiguration = vi.fn(() => ({
     get: (_key, fallbackValue) => fallbackValue,
 }));
@@ -44,9 +50,19 @@ vi.mock('vscode', () => ({
     },
     ProgressLocation: {
         Notification: 15,
+        Window: 10,
+    },
+    StatusBarAlignment: {
+        Left: 1,
+    },
+    ThemeColor: class {
+        constructor(id) {
+            this.id = id;
+        }
     },
     window: {
         createOutputChannel,
+        createStatusBarItem,
         createTreeView,
         registerUriHandler,
         showErrorMessage: vi.fn(),
@@ -73,6 +89,7 @@ beforeEach(() => {
     executeCommand.mockClear();
     createTreeView.mockClear();
     registerUriHandler.mockClear();
+    createStatusBarItem.mockClear();
     getConfiguration.mockClear();
 });
 
@@ -82,9 +99,12 @@ describe('contest extension activation', () => {
 
         await extensionModule.activate(context);
 
-        expect(executeCommand).toHaveBeenCalledWith('setContext', 'autojudgeContest.state', 'loggedOut');
+        // The views show "Loading the contest…" until the first restore settles.
+        expect(executeCommand).toHaveBeenCalledWith('setContext', 'autojudgeContest.state', 'loading');
+        expect(executeCommand).not.toHaveBeenCalledWith('setContext', 'autojudgeContest.state', 'loggedOut');
         expect(executeCommand.mock.invocationCallOrder[0]).toBeLessThan(createTreeView.mock.invocationCallOrder[0]);
-        expect(createOutputChannel).toHaveBeenCalledWith('AutoJudge Contest');
+        expect(createOutputChannel).toHaveBeenCalledWith('AutoJudge Contest', { log: true });
+        expect(createStatusBarItem).toHaveBeenCalledTimes(1);
         expect(createdTreeViews).toEqual([
             expect.objectContaining({
                 viewId: 'autojudgeContest.explorer',
@@ -96,7 +116,7 @@ describe('contest extension activation', () => {
             expect.objectContaining({
                 viewId: 'autojudgeContest.teams',
                 options: expect.objectContaining({
-                    showCollapseAll: true,
+                    showCollapseAll: false,
                     treeDataProvider: expect.any(Object),
                 }),
             }),
@@ -111,10 +131,12 @@ describe('contest extension activation', () => {
             'autojudgeContest.exportPublicCases',
             'autojudgeContest.openSubmission',
             'autojudgeContest.openTeamStanding',
+            'autojudgeContest.compareSubmissionOutput',
         ]);
         expect(registerUriHandler).toHaveBeenCalledTimes(1);
         expect(registerUriHandler).toHaveBeenCalledWith({ handleUri: expect.any(Function) });
-        expect(context.subscriptions).toHaveLength(16);
+        // output channel, tree provider, two views, status bar, controller, browser login, URI handler, 10 commands
+        expect(context.subscriptions).toHaveLength(18);
     });
 
     it('still activates when autojudgeContest.baseUrl is empty or invalid', async () => {

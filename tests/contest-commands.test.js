@@ -21,14 +21,17 @@ vi.mock('vscode', () => ({
     env: {
         openExternal: vscodeState.openExternal,
     },
-    ProgressLocation: { Notification: 15 },
+    ProgressLocation: { Notification: 15, Window: 10 },
     Uri: {
+        file: (fsPath) => ({ fsPath, scheme: 'file' }),
         parse: (value) => ({ toString: () => value }),
     },
     window: {
         registerUriHandler: vscodeState.registerUriHandler,
         showErrorMessage: vscodeState.showErrorMessage,
         showInformationMessage: vi.fn(),
+        showQuickPick: vi.fn(),
+        showTextDocument: vi.fn(),
         showWarningMessage: vscodeState.showWarningMessage,
         withProgress: vscodeState.withProgress,
     },
@@ -42,6 +45,7 @@ vi.mock('vscode', () => ({
 vi.mock('../src/services/contest-session.js', () => ({
     clearStoredSession: vi.fn(),
     pollSubmissionResult: vi.fn(),
+    readStoredSession: vi.fn(),
     redeemAndLoadContest: vi.fn(),
     refreshContestDetails: vi.fn(),
     restoreContestSession: vi.fn(),
@@ -115,7 +119,7 @@ describe('browser team login', () => {
             expect.objectContaining({
                 cancellable: true,
                 location: 15,
-                title: 'Waiting for you to log in in the browser…',
+                title: 'Complete the login in your browser…',
             }),
             expect.any(Function),
         );
@@ -176,11 +180,11 @@ describe('browser team login', () => {
         await loginCommand();
 
         expect(vscodeState.showErrorMessage).toHaveBeenCalledWith('Could not open the browser to log in.');
-        expect(outputChannel.appendLine).toHaveBeenCalledWith('ERROR: Could not open the browser to log in.');
+        expect(outputChannel.appendLine).toHaveBeenCalledWith('Could not open the browser to log in.');
 
         // The login is over, so a callback that arrives later has nothing to match.
         uriHandler.handleUri({ path: '/auth', query: 'code=handoff-code&state=late' });
-        expect(vscodeState.showErrorMessage).toHaveBeenLastCalledWith('No login in progress. Run Login Team again.');
+        expect(vscodeState.showWarningMessage).toHaveBeenLastCalledWith('No login in progress. Run Log In again.');
         expect(contestSession.redeemAndLoadContest).not.toHaveBeenCalled();
     });
 
@@ -189,8 +193,9 @@ describe('browser team login', () => {
 
         uriHandler.handleUri({ path: '/auth', query: `code=handoff-code&state=${'a'.repeat(43)}` });
 
-        expect(vscodeState.showErrorMessage).toHaveBeenCalledWith('No login in progress. Run Login Team again.');
-        expect(outputChannel.appendLine).toHaveBeenCalledWith('No login in progress. Run Login Team again.');
+        expect(vscodeState.showWarningMessage).toHaveBeenCalledWith('No login in progress. Run Log In again.');
+        expect(vscodeState.showErrorMessage).not.toHaveBeenCalled();
+        expect(outputChannel.appendLine).toHaveBeenCalledWith('No login in progress. Run Log In again.');
         expect(contestSession.redeemAndLoadContest).not.toHaveBeenCalled();
     });
 
@@ -210,12 +215,59 @@ describe('browser team login', () => {
         uriHandler.handleUri({ path: '/auth', query: 'code=handoff-code' });
 
         expect(contestSession.redeemAndLoadContest).not.toHaveBeenCalled();
-        expect(vscodeState.showErrorMessage).toHaveBeenCalledTimes(2);
+        expect(vscodeState.showWarningMessage).toHaveBeenCalledTimes(2);
+        expect(vscodeState.showErrorMessage).not.toHaveBeenCalled();
         expect(outputChannel.appendLine).toHaveBeenCalledWith(expect.stringContaining('did not match'));
 
         uriHandler.handleUri({ path: '/auth', query: `code=real-code&state=${openedState()}` });
         await login;
         expect(contestSession.redeemAndLoadContest).toHaveBeenCalledWith(expect.objectContaining({ code: 'real-code' }));
+    });
+});
+
+
+describe('command glue', () => {
+    it('only logs a link that is not a login callback', () => {
+        const { uriHandler } = registerLogin();
+
+        uriHandler.handleUri({ path: '/somewhere-else', query: '' });
+
+        expect(outputChannel.appendLine).toHaveBeenCalledWith('Ignored an unknown AutoJudge Contest link.');
+        expect(vscodeState.showWarningMessage).not.toHaveBeenCalled();
+        expect(vscodeState.showErrorMessage).not.toHaveBeenCalled();
+    });
+
+    it('restores silently at startup: a failure with a stored token shows the offline state without a toast', async () => {
+        contestSession.restoreContestSession.mockRejectedValue(new Error('fetch failed'));
+        contestSession.readStoredSession.mockResolvedValue({ token: 'stored' });
+
+        registerLogin();
+
+        await vi.waitFor(() => expect(vscodeState.executeCommand)
+            .toHaveBeenCalledWith('setContext', 'autojudgeContest.state', 'offline'));
+        expect(vscodeState.showErrorMessage).not.toHaveBeenCalled();
+        expect(vscodeState.withProgress).not.toHaveBeenCalled();
+        expect(contestSession.clearStoredSession).not.toHaveBeenCalled();
+    });
+
+    it('shows explorer progress for a manual refresh', async () => {
+        registerLogin();
+        const refreshCommand = vscodeState.registerCommand.mock.calls
+            .find(([command]) => command === COMMANDS.REFRESH_TREE)[1];
+
+        await refreshCommand();
+
+        expect(vscodeState.withProgress).toHaveBeenCalledWith(
+            { location: { viewId: 'autojudgeContest.explorer' } },
+            expect.any(Function),
+        );
+    });
+
+    it('registers the compare-output command', () => {
+        registerLogin();
+
+        expect(vscodeState.registerCommand.mock.calls.map(([command]) => command))
+            .toContain(COMMANDS.COMPARE_SUBMISSION_OUTPUT);
     });
 });
 

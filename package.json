@@ -327,6 +327,12 @@
           "minimum": 1000,
           "order": 3,
           "markdownDescription": "How often, in milliseconds, a submitted solution is checked for its verdict. Defaults to `5000`; the minimum is `1000`."
+        },
+        "autojudgeContest.confirmBeforeSubmit": {
+          "type": "boolean",
+          "default": true,
+          "order": 4,
+          "markdownDescription": "Ask for confirmation before submitting the active file, since a rejected submission adds a penalty. Unsaved files are always confirmed before they are saved and submitted."
         }
       }
     }

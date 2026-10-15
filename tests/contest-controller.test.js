@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fsState = vi.hoisted(() => ({
     mkdir: vi.fn(),
@@ -18,9 +18,15 @@ vi.mock('vscode', () => ({
     },
 }), { virtual: true });
 
-import { createContestController } from '../src/controllers/contest-controller.js';
+import { createContestController, logToChannel } from '../src/controllers/contest-controller.js';
 import { BrowserLoginError, LOGIN_FAILURE } from '../src/services/browser-login.js';
 
+const ROOT = '/workspace/.autojudge-state';
+
+/**
+ * Let pending promise callbacks (non-awaited toasts and their actions) run.
+ * @param {number} [turns]
+ */
 async function flushPromises(turns = 10) {
     for (let index = 0; index < turns; index += 1) {
         await Promise.resolve();
@@ -40,6 +46,7 @@ function createSnapshot() {
     const contest = {
         duration: 180,
         name: 'Regional Final',
+        penaltyTime: 20,
         problems,
         publicId: 'k3m9x2p7q8w1a',
         startTime: '2026-05-28T03:00:00.000Z',
@@ -72,31 +79,92 @@ function createSnapshot() {
     };
 }
 
+/**
+ * Build a snapshot that lists both contest problems.
+ * @returns {object}
+ */
+function createFullSnapshot() {
+    const snapshot = createSnapshot();
+    return { ...snapshot, problems: snapshot.contest.problems };
+}
+
+/**
+ * Build an API-style error as the contest API client throws it.
+ * @param {number} statusCode
+ * @param {string} code
+ * @param {string} message
+ * @returns {Error}
+ */
+function apiError(statusCode, code, message) {
+    return Object.assign(new Error(message), { code, statusCode });
+}
+
+/**
+ * Build a fake tree view whose visibility can be toggled from the test.
+ * @param {boolean} visible
+ * @returns {{ visible: boolean, onDidChangeVisibility: Function, setVisible: (value: boolean) => void }}
+ */
+function createFakeView(visible) {
+    const listeners = new Set();
+    return {
+        visible,
+        onDidChangeVisibility(listener) {
+            listeners.add(listener);
+            return { dispose: () => listeners.delete(listener) };
+        },
+        setVisible(value) {
+            this.visible = value;
+            for (const listener of listeners) {
+                listener({ visible: value });
+            }
+        },
+    };
+}
+
+/**
+ * Build a fake vscode.Uri for a file path.
+ * @param {string} fsPath
+ * @returns {{ scheme: string, fsPath: string }}
+ */
+function fileUri(fsPath) {
+    return { scheme: 'file', fsPath };
+}
+
 describe('contest controller', () => {
     let context;
+    let workspaceStateStore;
     let outputChannel;
     let openTextDocument;
+    let showTextDocument;
     let browserLogin;
     let showWarningMessage;
+    let showQuickPick;
     let withCancellableProgress;
+    let withExplorerProgress;
     let resolvePollIntervalMs;
     let resolveBaseUrl;
+    let resolveConfirmBeforeSubmit;
     let sessionApi;
     let executeCommand;
     let setContext;
-    let showTextDocument;
     let showInformationMessage;
     let showErrorMessage;
-    let withProgressNotification;
     let submissionWorkspace;
     let teamsStandingsProvider;
     let treeProvider;
+    let statusBar;
+    let controllers;
 
     beforeEach(() => {
+        workspaceStateStore = {};
         context = {
             id: 'extension-context',
-            storageUri: {
-                fsPath: '/workspace/.autojudge-state',
+            storageUri: { fsPath: ROOT },
+            workspaceState: {
+                get: (key) => workspaceStateStore[key],
+                update: vi.fn(async (key, value) => {
+                    workspaceStateStore[key] = value;
+                }),
             },
         };
         outputChannel = {
@@ -106,14 +174,19 @@ describe('contest controller', () => {
         };
         fsState.mkdir.mockReset();
         fsState.writeFile.mockReset();
-        openTextDocument = vi.fn();
+        openTextDocument = vi.fn(async (target) => ({ uri: `uri:${target?.fsPath ?? target}` }));
+        showTextDocument = vi.fn();
         browserLogin = { waitForHandoffCode: vi.fn() };
         showWarningMessage = vi.fn();
+        showQuickPick = vi.fn();
         withCancellableProgress = vi.fn(async (_title, task) => await task({ onCancellationRequested: vi.fn() }));
+        withExplorerProgress = vi.fn(async (task) => await task());
         resolvePollIntervalMs = vi.fn(() => 1500);
         resolveBaseUrl = vi.fn(() => 'https://api.autojudge.test');
+        resolveConfirmBeforeSubmit = vi.fn(() => true);
         sessionApi = {
             clearStoredSession: vi.fn(),
+            readStoredSession: vi.fn(async () => ({ token: 'stored-token' })),
             redeemAndLoadContest: vi.fn(),
             pollSubmissionResult: vi.fn(),
             refreshContestDetails: vi.fn(),
@@ -122,64 +195,34 @@ describe('contest controller', () => {
         };
         executeCommand = vi.fn();
         setContext = vi.fn();
-        showTextDocument = vi.fn();
         showInformationMessage = vi.fn();
         showErrorMessage = vi.fn();
-        withProgressNotification = vi.fn(async (_title, task) => await task());
         submissionWorkspace = {
             exportPublicCases: vi.fn(),
-            readActiveSourceFile: vi.fn(),
+            findExistingCaseFiles: vi.fn(async () => []),
+            pickExportDirectory: vi.fn(async () => fileUri('/workspace/cases')),
+            readActiveSourceFile: vi.fn(async () => ({
+                filename: 'main.cpp',
+                sourceCode: 'int main() { return 0; }\n',
+                uri: fileUri('/workspace/main.cpp'),
+                isDirty: false,
+            })),
         };
-        teamsStandingsProvider = {
-            setSnapshot: vi.fn(),
-        };
+        teamsStandingsProvider = { setSnapshot: vi.fn() };
         treeProvider = {
             getSnapshot: vi.fn(() => null),
+            refresh: vi.fn(),
             setSnapshot: vi.fn(),
         };
+        statusBar = { update: vi.fn(), setPendingCount: vi.fn() };
+        controllers = [];
     });
 
-    it('logs in through the browser hand-off and pushes the snapshot into the tree', async () => {
-        const snapshot = createSnapshot();
-        browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
-        sessionApi.redeemAndLoadContest.mockResolvedValue(snapshot);
-
-        const controller = createContestController({
-            context,
-            executeCommand,
-            openTextDocument,
-            outputChannel,
-            browserLogin,
-            resolvePollIntervalMs,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            showWarningMessage,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-            withCancellableProgress,
-        });
-
-        const result = await controller.loginTeam();
-
-        expect(withCancellableProgress).toHaveBeenCalledWith(
-            'Waiting for you to log in in the browser…',
-            expect.any(Function),
-        );
-        expect(sessionApi.redeemAndLoadContest).toHaveBeenCalledWith({
-            baseUrl: 'https://api.autojudge.test',
-            code: 'handoff-code',
-            context,
-        });
-        expect(treeProvider.setSnapshot).toHaveBeenCalledWith(snapshot);
-        expect(teamsStandingsProvider.setSnapshot).toHaveBeenCalledWith(snapshot);
-        expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'loggedIn');
-        expect(showErrorMessage).not.toHaveBeenCalled();
-        expect(result).toEqual(snapshot);
+    afterEach(() => {
+        for (const controller of controllers) {
+            controller.dispose();
+        }
+        vi.useRealTimers();
     });
 
     /**
@@ -188,994 +231,986 @@ describe('contest controller', () => {
      * @returns {ReturnType<typeof createContestController>}
      */
     function buildController(overrides = {}) {
-        return createContestController({
+        const controller = createContestController({
             browserLogin,
             context,
             executeCommand,
             openTextDocument,
+            showTextDocument,
             outputChannel,
             resolvePollIntervalMs,
             resolveBaseUrl,
+            resolveConfirmBeforeSubmit,
             sessionApi,
             setContext,
             showInformationMessage,
             showErrorMessage,
             showWarningMessage,
+            showQuickPick,
+            statusBar,
             submissionWorkspace,
             teamsStandingsProvider,
+            toFileUri: (fsPath) => fileUri(fsPath),
             treeProvider,
             withCancellableProgress,
-            withProgressNotification,
+            withExplorerProgress,
             ...overrides,
         });
+        controllers.push(controller);
+        return controller;
     }
 
     /**
-     * Build an API-style error as the contest API client throws it.
-     * @param {number} statusCode
-     * @param {string} code
-     * @param {string} message
-     * @returns {Error}
+     * Build a controller that starts logged in with the given snapshot.
+     * @param {object} snapshot
+     * @param {object} [overrides]
+     * @returns {ReturnType<typeof createContestController>}
      */
-    function apiError(statusCode, code, message) {
-        return Object.assign(new Error(message), { code, statusCode });
+    function buildLoggedInController(snapshot, overrides = {}) {
+        treeProvider.getSnapshot.mockReturnValue(snapshot);
+        return buildController(overrides);
     }
 
-    it('hands the cancellation token of the progress notification to the browser login', async () => {
-        const cancellation = { onCancellationRequested: vi.fn() };
-        withCancellableProgress.mockImplementation(async (_title, task) => await task(cancellation));
-        browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
-        sessionApi.redeemAndLoadContest.mockResolvedValue(createSnapshot());
+    /**
+     * Collect the paths written through the mocked fs module.
+     * @returns {string[]}
+     */
+    function writtenPaths() {
+        return fsState.writeFile.mock.calls.map(([filePath]) => filePath);
+    }
 
-        await buildController().loginTeam();
+    describe('login and session', () => {
+        it('logs in through the browser hand-off and pushes the snapshot into the trees and status bar', async () => {
+            const snapshot = createSnapshot();
+            browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+            sessionApi.redeemAndLoadContest.mockResolvedValue(snapshot);
 
-        expect(browserLogin.waitForHandoffCode).toHaveBeenCalledWith(cancellation);
-    });
+            const result = await buildController().loginTeam();
 
-    it('ends quietly when the user cancels the browser login', async () => {
-        browserLogin.waitForHandoffCode.mockRejectedValue(new BrowserLoginError(LOGIN_FAILURE.CANCELLED, 'Login cancelled.'));
-
-        const result = await buildController().loginTeam();
-
-        expect(result).toBeNull();
-        expect(sessionApi.redeemAndLoadContest).not.toHaveBeenCalled();
-        expect(showErrorMessage).not.toHaveBeenCalled();
-    });
-
-    it('reports a browser login that timed out', async () => {
-        browserLogin.waitForHandoffCode.mockRejectedValue(new BrowserLoginError(LOGIN_FAILURE.TIMEOUT, 'The browser login timed out. Run Login Team again.'));
-
-        const result = await buildController().loginTeam();
-
-        expect(result).toBeNull();
-        expect(showErrorMessage).toHaveBeenCalledWith('The browser login timed out. Run Login Team again.');
-        expect(sessionApi.clearStoredSession).not.toHaveBeenCalled();
-    });
-
-    it('explains an expired or reused hand-off code without clearing the stored session', async () => {
-        browserLogin.waitForHandoffCode.mockResolvedValue('used-code');
-        sessionApi.redeemAndLoadContest.mockRejectedValue(apiError(400, 'HANDOFF_INVALID', 'This sign-in link is invalid or has expired.'));
-
-        const result = await buildController().loginTeam();
-
-        expect(result).toBeNull();
-        expect(showErrorMessage).toHaveBeenCalledWith('The browser login link expired or was already used. Run Login Team again.');
-        expect(sessionApi.clearStoredSession).not.toHaveBeenCalled();
-        expect(showWarningMessage).not.toHaveBeenCalled();
-    });
-
-    it('clears the token and offers a Log in action when restoring a session finds it ended', async () => {
-        sessionApi.restoreContestSession.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'Your team session has ended. Log in again.'));
-        showWarningMessage.mockResolvedValue(undefined);
-
-        const result = await buildController().refreshTree();
-        await flushPromises();
-
-        expect(result).toBeNull();
-        expect(sessionApi.clearStoredSession).toHaveBeenCalledWith(context);
-        expect(treeProvider.setSnapshot).toHaveBeenCalledWith(null);
-        expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'loggedOut');
-        expect(showWarningMessage).toHaveBeenCalledWith(
-            'Your session ended. Log in again (ask staff to reset your PIN if needed).',
-            'Log in',
-        );
-        expect(showErrorMessage).not.toHaveBeenCalled();
-        expect(browserLogin.waitForHandoffCode).not.toHaveBeenCalled();
-    });
-
-    it('starts the browser login when the Log in action of the session-ended message is chosen', async () => {
-        const snapshot = createSnapshot();
-        sessionApi.submitSolution.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
-        submissionWorkspace.readActiveSourceFile.mockResolvedValue({ filename: 'main.py', sourceCode: 'print(1)' });
-        showWarningMessage.mockResolvedValue('Log in');
-        browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
-        sessionApi.redeemAndLoadContest.mockResolvedValue(snapshot);
-
-        await buildController().submitActiveFile(snapshot.problems[0]);
-        await flushPromises();
-
-        expect(sessionApi.clearStoredSession).toHaveBeenCalledWith(context);
-        expect(browserLogin.waitForHandoffCode).toHaveBeenCalledTimes(1);
-        expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(snapshot);
-    });
-
-    it('shows the session-ended prompt again after the user starts a new login', async () => {
-        sessionApi.restoreContestSession.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
-        const controller = buildController();
-
-        await controller.refreshTree();
-        await flushPromises();
-        expect(showWarningMessage).toHaveBeenCalledTimes(1);
-
-        browserLogin.waitForHandoffCode.mockRejectedValue(new BrowserLoginError(LOGIN_FAILURE.CANCELLED, 'Login cancelled.'));
-        await controller.loginTeam();
-
-        await controller.refreshTree();
-        await flushPromises();
-        expect(showWarningMessage).toHaveBeenCalledTimes(2);
-    });
-
-    it('handles an ended session found by the timed standings refresh', async () => {
-        vi.useFakeTimers();
-        const snapshot = createSnapshot();
-        browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
-        sessionApi.redeemAndLoadContest.mockResolvedValue(snapshot);
-        sessionApi.refreshContestDetails.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
-
-        const controller = buildController();
-        await controller.loginTeam();
-        await vi.advanceTimersByTimeAsync(15000);
-
-        expect(sessionApi.clearStoredSession).toHaveBeenCalledWith(context);
-        expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(null);
-        expect(showWarningMessage).toHaveBeenCalledTimes(1);
-        expect(outputChannel.appendLine).not.toHaveBeenCalledWith(expect.stringContaining('Standings refresh failed'));
-
-        controller.dispose();
-        vi.useRealTimers();
-    });
-
-    it('handles an ended session found while polling a submission verdict', async () => {
-        const snapshot = createSnapshot();
-        treeProvider.getSnapshot.mockReturnValue(snapshot);
-        submissionWorkspace.readActiveSourceFile.mockResolvedValue({ filename: 'main.py', sourceCode: 'print(1)' });
-        sessionApi.submitSolution.mockResolvedValue({ id: 5, status: 'PENDING' });
-        sessionApi.pollSubmissionResult.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
-
-        await buildController().submitActiveFile(snapshot.problems[0]);
-
-        expect(sessionApi.clearStoredSession).toHaveBeenCalledWith(context);
-        expect(showWarningMessage).toHaveBeenCalledTimes(1);
-        expect(showErrorMessage).not.toHaveBeenCalled();
-    });
-
-    it('shows the session-ended message once when several requests notice it together', async () => {
-        sessionApi.restoreContestSession.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
-        const controller = buildController();
-
-        await Promise.all([controller.refreshTree(), controller.refreshTree()]);
-
-        expect(showWarningMessage).toHaveBeenCalledTimes(1);
-    });
-
-    it('does not treat other 401 errors as an ended session', async () => {
-        sessionApi.restoreContestSession.mockRejectedValue(apiError(401, 'UNAUTHORIZED', 'Not allowed.'));
-
-        await buildController().refreshTree();
-
-        expect(showErrorMessage).toHaveBeenCalledWith('Not allowed.');
-        expect(showWarningMessage).not.toHaveBeenCalled();
-    });
-
-    it('restores a saved session when refresh is invoked', async () => {
-        const snapshot = createSnapshot();
-        sessionApi.restoreContestSession.mockResolvedValue(snapshot);
-
-        const controller = createContestController({
-            context,
-            executeCommand,
-            openTextDocument,
-            outputChannel,
-            browserLogin,
-            resolvePollIntervalMs,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            showWarningMessage,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-            withCancellableProgress,
+            expect(withCancellableProgress).toHaveBeenCalledWith('Complete the login in your browser…', expect.any(Function));
+            expect(sessionApi.redeemAndLoadContest).toHaveBeenCalledWith({
+                baseUrl: 'https://api.autojudge.test',
+                code: 'handoff-code',
+                context,
+            });
+            expect(treeProvider.setSnapshot).toHaveBeenCalledWith(snapshot);
+            expect(teamsStandingsProvider.setSnapshot).toHaveBeenCalledWith(snapshot);
+            expect(statusBar.update).toHaveBeenCalledWith(snapshot);
+            expect(statusBar.setPendingCount).toHaveBeenLastCalledWith(0);
+            expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'loggedIn');
+            expect(outputChannel.appendLine).toHaveBeenCalledWith('Logged in as Bits for Regional Final.');
+            expect(showErrorMessage).not.toHaveBeenCalled();
+            expect(result).toEqual(snapshot);
         });
 
-        const result = await controller.refreshTree();
+        it('does not crash when the team or contest name is missing', async () => {
+            const snapshot = { ...createSnapshot(), team: { publicId: 'tbits91cd0000' }, contest: { publicId: 'k3m9x2p7q8w1a' } };
+            browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+            sessionApi.redeemAndLoadContest.mockResolvedValue(snapshot);
 
-        expect(sessionApi.restoreContestSession).toHaveBeenCalledWith({
-            baseUrl: 'https://api.autojudge.test',
-            context,
+            await expect(buildController().loginTeam()).resolves.toEqual(snapshot);
+            expect(outputChannel.appendLine).toHaveBeenCalledWith('Logged in as your team for the contest.');
         });
-        expect(treeProvider.setSnapshot).toHaveBeenCalledWith(snapshot);
-        expect(teamsStandingsProvider.setSnapshot).toHaveBeenCalledWith(snapshot);
-        expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'loggedIn');
-        expect(result).toEqual(snapshot);
+
+        it('hands the cancellation token of the progress notification to the browser login', async () => {
+            const cancellation = { onCancellationRequested: vi.fn() };
+            withCancellableProgress.mockImplementation(async (_title, task) => await task(cancellation));
+            browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+            sessionApi.redeemAndLoadContest.mockResolvedValue(createSnapshot());
+
+            await buildController().loginTeam();
+
+            expect(browserLogin.waitForHandoffCode).toHaveBeenCalledWith(cancellation);
+        });
+
+        it('ends quietly when the user cancels the browser login', async () => {
+            browserLogin.waitForHandoffCode.mockRejectedValue(new BrowserLoginError(LOGIN_FAILURE.CANCELLED, 'Login cancelled.'));
+
+            const result = await buildController().loginTeam();
+
+            expect(result).toBeNull();
+            expect(sessionApi.redeemAndLoadContest).not.toHaveBeenCalled();
+            expect(showErrorMessage).not.toHaveBeenCalled();
+        });
+
+        it('reports a browser login that timed out without an ERROR prefix', async () => {
+            browserLogin.waitForHandoffCode.mockRejectedValue(new BrowserLoginError(LOGIN_FAILURE.TIMEOUT, 'The browser login timed out. Run Log In again.'));
+
+            const result = await buildController().loginTeam();
+
+            expect(result).toBeNull();
+            expect(showErrorMessage).toHaveBeenCalledWith('The browser login timed out. Run Log In again.');
+            expect(outputChannel.appendLine).toHaveBeenCalledWith('The browser login timed out. Run Log In again.');
+            expect(sessionApi.clearStoredSession).not.toHaveBeenCalled();
+        });
+
+        it('explains an expired or reused hand-off code without clearing the stored session', async () => {
+            browserLogin.waitForHandoffCode.mockResolvedValue('used-code');
+            sessionApi.redeemAndLoadContest.mockRejectedValue(apiError(400, 'HANDOFF_INVALID', 'This sign-in link is invalid or has expired.'));
+
+            const result = await buildController().loginTeam();
+
+            expect(result).toBeNull();
+            expect(showErrorMessage).toHaveBeenCalledWith('The browser login link expired or was already used. Run Log In again.');
+            expect(sessionApi.clearStoredSession).not.toHaveBeenCalled();
+            expect(showWarningMessage).not.toHaveBeenCalled();
+        });
+
+        it('clears the token and offers a Log In action when restoring a session finds it ended', async () => {
+            sessionApi.restoreContestSession.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'Your team session has ended. Log in again.'));
+            showWarningMessage.mockResolvedValue(undefined);
+
+            const result = await buildController().refreshTree();
+            await flushPromises();
+
+            expect(result).toBeNull();
+            expect(sessionApi.clearStoredSession).toHaveBeenCalledWith(context);
+            expect(treeProvider.setSnapshot).toHaveBeenCalledWith(null);
+            expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'loggedOut');
+            expect(showWarningMessage).toHaveBeenCalledWith(
+                'Your session ended. Log in again (ask staff to reset your PIN if needed).',
+                'Log In',
+            );
+            expect(showErrorMessage).not.toHaveBeenCalled();
+            expect(browserLogin.waitForHandoffCode).not.toHaveBeenCalled();
+        });
+
+        it('starts the browser login when the Log In action of the session-ended message is chosen', async () => {
+            const snapshot = createSnapshot();
+            sessionApi.submitSolution.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
+            showWarningMessage.mockImplementation(async (message) => (message.startsWith('Submit') ? 'Submit' : 'Log In'));
+            browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+            sessionApi.redeemAndLoadContest.mockResolvedValue(snapshot);
+
+            await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+            await flushPromises();
+
+            expect(sessionApi.clearStoredSession).toHaveBeenCalledWith(context);
+            expect(browserLogin.waitForHandoffCode).toHaveBeenCalledTimes(1);
+            expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(snapshot);
+        });
+
+        it('shows the session-ended prompt again after the user starts a new login', async () => {
+            sessionApi.restoreContestSession.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
+            const controller = buildController();
+
+            await controller.refreshTree();
+            await flushPromises();
+            expect(showWarningMessage).toHaveBeenCalledTimes(1);
+
+            browserLogin.waitForHandoffCode.mockRejectedValue(new BrowserLoginError(LOGIN_FAILURE.CANCELLED, 'Login cancelled.'));
+            await controller.loginTeam();
+
+            await controller.refreshTree();
+            await flushPromises();
+            expect(showWarningMessage).toHaveBeenCalledTimes(2);
+        });
+
+        it('shows the session-ended message once when several requests notice it together', async () => {
+            sessionApi.restoreContestSession.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
+            const controller = buildController();
+
+            await Promise.all([controller.refreshTree(), controller.refreshTree()]);
+
+            expect(showWarningMessage).toHaveBeenCalledTimes(1);
+        });
+
+        it('logs out by clearing storage and resetting the trees and status bar', async () => {
+            await buildLoggedInController(createSnapshot()).logoutTeam();
+
+            expect(sessionApi.clearStoredSession).toHaveBeenCalledWith(context);
+            expect(treeProvider.setSnapshot).toHaveBeenCalledWith(null);
+            expect(teamsStandingsProvider.setSnapshot).toHaveBeenCalledWith(null);
+            expect(statusBar.update).toHaveBeenLastCalledWith(null);
+            expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'loggedOut');
+        });
     });
 
-    it('keeps the session and reports a contest that has not started yet on refresh', async () => {
-        const snapshot = { ...createSnapshot(), problems: [], contestNotStarted: true };
-        sessionApi.restoreContestSession.mockResolvedValue(snapshot);
+    describe('refresh and view states', () => {
+        it('restores a saved session on refresh and shows explorer progress for a manual refresh', async () => {
+            const snapshot = createSnapshot();
+            sessionApi.restoreContestSession.mockResolvedValue(snapshot);
 
-        const result = await buildController().refreshTree();
+            const result = await buildController().refreshTree();
 
-        expect(result).toEqual(snapshot);
-        expect(treeProvider.setSnapshot).toHaveBeenCalledWith(snapshot);
-        expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'loggedIn');
-        expect(outputChannel.appendLine).toHaveBeenCalledWith('The contest has not started yet. Refresh once it starts to load the problems.');
-        expect(sessionApi.clearStoredSession).not.toHaveBeenCalled();
-        expect(showErrorMessage).not.toHaveBeenCalled();
-        expect(showWarningMessage).not.toHaveBeenCalled();
+            expect(withExplorerProgress).toHaveBeenCalledTimes(1);
+            expect(sessionApi.restoreContestSession).toHaveBeenCalledWith({
+                baseUrl: 'https://api.autojudge.test',
+                context,
+            });
+            expect(treeProvider.setSnapshot).toHaveBeenCalledWith(snapshot);
+            expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'loggedIn');
+            expect(result).toEqual(snapshot);
+        });
+
+        it('switches to logged out when no token is stored on the silent startup restore', async () => {
+            sessionApi.restoreContestSession.mockResolvedValue(null);
+
+            await buildController().refreshTree({ silent: true });
+
+            expect(withExplorerProgress).not.toHaveBeenCalled();
+            expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'loggedOut');
+            expect(showErrorMessage).not.toHaveBeenCalled();
+        });
+
+        it('goes offline without a toast when the silent startup restore fails with a stored token', async () => {
+            sessionApi.restoreContestSession.mockRejectedValue(new Error('fetch failed'));
+
+            const result = await buildController().refreshTree({ silent: true });
+            await flushPromises();
+
+            expect(result).toBeNull();
+            expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'offline');
+            expect(treeProvider.setSnapshot).toHaveBeenCalledWith(null);
+            expect(teamsStandingsProvider.setSnapshot).toHaveBeenCalledWith(null);
+            expect(sessionApi.clearStoredSession).not.toHaveBeenCalled();
+            expect(outputChannel.appendLine).toHaveBeenCalledWith('Could not load the contest: fetch failed');
+            expect(showErrorMessage).not.toHaveBeenCalled();
+        });
+
+        it('goes offline and shows an error toast when a manual refresh fails', async () => {
+            sessionApi.restoreContestSession.mockRejectedValue(apiError(401, 'UNAUTHORIZED', 'Not allowed.'));
+
+            await buildController().refreshTree();
+            await flushPromises();
+
+            expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'offline');
+            expect(showErrorMessage).toHaveBeenCalledWith('Not allowed.');
+            expect(showWarningMessage).not.toHaveBeenCalled();
+            expect(sessionApi.clearStoredSession).not.toHaveBeenCalled();
+        });
+
+        it('shows logged out instead of offline when a failed refresh has no stored token', async () => {
+            sessionApi.restoreContestSession.mockRejectedValue(new Error('fetch failed'));
+            sessionApi.readStoredSession.mockResolvedValue(null);
+
+            await buildController().refreshTree();
+
+            expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'loggedOut');
+            expect(setContext).not.toHaveBeenCalledWith('autojudgeContest.state', 'offline');
+        });
+
+        it('offers Open Settings for an invalid setting and opens that setting when chosen', async () => {
+            const invalid = Object.assign(new Error('The autojudgeContest.baseUrl setting is not a valid http(s) URL. Fix it in Settings.'), {
+                code: 'INVALID_SETTING',
+                setting: 'autojudgeContest.baseUrl',
+            });
+            resolveBaseUrl.mockImplementation(() => {
+                throw invalid;
+            });
+            showErrorMessage.mockResolvedValue('Open Settings');
+
+            await buildController().refreshTree();
+            await flushPromises();
+
+            expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'offline');
+            expect(showErrorMessage).toHaveBeenCalledWith(invalid.message, 'Open Settings');
+            expect(executeCommand).toHaveBeenCalledWith('workbench.action.openSettings', 'autojudgeContest.baseUrl');
+        });
+
+        it('keeps the session and reports a contest that has not started yet on refresh', async () => {
+            const snapshot = { ...createSnapshot(), problems: [], contestNotStarted: true };
+            sessionApi.restoreContestSession.mockResolvedValue(snapshot);
+
+            const result = await buildController().refreshTree();
+
+            expect(result).toEqual(snapshot);
+            expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'loggedIn');
+            expect(outputChannel.appendLine).toHaveBeenCalledWith('The contest has not started yet. Refresh once it starts to load the problems.');
+            expect(sessionApi.clearStoredSession).not.toHaveBeenCalled();
+            expect(showErrorMessage).not.toHaveBeenCalled();
+        });
     });
 
-    it('logs out by clearing storage and resetting the tree', async () => {
-        const controller = createContestController({
-            context,
-            executeCommand,
-            openTextDocument,
-            outputChannel,
-            browserLogin,
-            resolvePollIntervalMs,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            showWarningMessage,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-            withCancellableProgress,
+    describe('generated pages', () => {
+        it('names the problem page after its letter and title so the tab reads "Preview A. A + B.md"', async () => {
+            const snapshot = createFullSnapshot();
+            openTextDocument.mockResolvedValue({ uri: 'problem-uri' });
+
+            await buildLoggedInController(snapshot).openProblem({ ...snapshot.problems[0], description: 'Add two integers.' });
+
+            expect(fsState.mkdir).toHaveBeenCalledWith(`${ROOT}/problem-previews`, { recursive: true });
+            expect(fsState.writeFile).toHaveBeenCalledWith(
+                `${ROOT}/problem-previews/A. A + B.md`,
+                expect.stringContaining('# A. A + B'),
+                { encoding: 'utf-8' },
+            );
+            expect(fsState.writeFile.mock.calls[0][1]).toContain('Add two integers.');
+            expect(openTextDocument).toHaveBeenCalledWith(`${ROOT}/problem-previews/A. A + B.md`);
+            expect(executeCommand).toHaveBeenCalledWith('markdown.showPreview', 'problem-uri', { preview: true });
         });
 
-        await controller.logoutTeam();
+        it('accepts a tree item that wraps the problem', async () => {
+            const snapshot = createFullSnapshot();
 
-        expect(sessionApi.clearStoredSession).toHaveBeenCalledWith(context);
-        expect(treeProvider.setSnapshot).toHaveBeenCalledWith(null);
-        expect(teamsStandingsProvider.setSnapshot).toHaveBeenCalledWith(null);
-        expect(setContext).toHaveBeenCalledWith('autojudgeContest.state', 'loggedOut');
+            await buildLoggedInController(snapshot).openProblem({ problem: snapshot.problems[1] });
+
+            expect(writtenPaths()).toEqual([`${ROOT}/problem-previews/B. Binary Search.md`]);
+        });
+
+        it('opens the contest overview page named after the contest', async () => {
+            const contest = {
+                publicId: 'k3m9x2p7q8w1a',
+                name: 'Regional Final',
+                duration: 180,
+                startTime: '2026-05-28T03:00:00.000Z',
+            };
+
+            const result = await buildController().openContestDashboard(contest);
+
+            expect(fsState.writeFile).toHaveBeenCalledWith(
+                `${ROOT}/contest-dashboards/Contest Overview · Regional Final.md`,
+                expect.stringContaining('# Contest Overview · Regional Final'),
+                { encoding: 'utf-8' },
+            );
+            expect(executeCommand).toHaveBeenCalledWith('markdown.showPreview', expect.anything(), { preview: true });
+            expect(result).toEqual(contest);
+        });
+
+        it('shows Not started in the contest overview when the contest has no start time', async () => {
+            await buildController().openContestDashboard({
+                publicId: 'k3m9x2p7q8w1a',
+                name: 'Regional Final',
+                duration: 180,
+                startTime: null,
+                penaltyTime: 20,
+                freezeTime: 60,
+                teams: [],
+                problems: [],
+            });
+
+            const dashboard = fsState.writeFile.mock.calls.at(-1)[1];
+            expect(dashboard).toContain('- **Start:** Not started');
+            expect(dashboard).toContain('- **End:** Not started');
+            expect(dashboard).not.toContain('1970');
+        });
+
+        it('opens the submission page named "Submission 12 · A. A + B"', async () => {
+            const snapshot = createFullSnapshot();
+            const submission = {
+                id: 12,
+                problem: { publicId: 'pa1b2c3d4e5f6', title: 'A + B' },
+                status: 'ACCEPTED',
+                submittedAt: '2026-05-28T03:10:00.000Z',
+            };
+
+            const result = await buildLoggedInController(snapshot).openSubmission({ submission });
+
+            expect(fsState.writeFile).toHaveBeenCalledWith(
+                `${ROOT}/submission-details/Submission 12 · A. A + B.md`,
+                expect.stringContaining('# Submission 12'),
+                { encoding: 'utf-8' },
+            );
+            expect(result).toEqual(submission);
+        });
+
+        it('opens the team page named after the team with its rank from the current standings', async () => {
+            const snapshot = createSnapshot();
+            const controller = buildLoggedInController(snapshot);
+
+            await controller.openTeamStanding(snapshot.contest.teams[1]);
+
+            expect(writtenPaths()).toEqual([`${ROOT}/team-details/Bits.md`]);
+            const [, content] = fsState.writeFile.mock.calls[0];
+            expect(content).toContain('- **Rank:** #2 of 2');
+            expect(content).toContain('- **Solved:** 1 of 2');
+            expect(content).toContain('- A. A + B');
+        });
     });
 
-    it('opens a markdown problem preview from the clicked problem item', async () => {
-        const document = { uri: 'file:///workspace/.autojudge-state/problem-previews/a-b.md' };
-        openTextDocument.mockResolvedValue(document);
+    describe('palette fallbacks', () => {
+        it('asks which problem to open when the palette passes no argument', async () => {
+            const snapshot = createFullSnapshot();
+            snapshot.submissions = [
+                { id: 1, status: 'ACCEPTED', problem: { publicId: 'pa1b2c3d4e5f6' }, submittedAt: '2026-05-28T03:10:00.000Z' },
+                { id: 2, status: 'WRONG_ANSWER', problem: { publicId: 'pb2c3d4e5f6a1' }, submittedAt: '2026-05-28T03:11:00.000Z' },
+            ];
+            showQuickPick.mockImplementation(async (items) => items[1]);
 
-        const controller = createContestController({
-            context,
-            executeCommand,
-            openTextDocument,
-            outputChannel,
-            browserLogin,
-            resolvePollIntervalMs,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            showWarningMessage,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-            withCancellableProgress,
+            await buildLoggedInController(snapshot).openProblem();
+
+            expect(showQuickPick).toHaveBeenCalledWith([
+                expect.objectContaining({ label: 'A. A + B', description: '✓ Solved' }),
+                expect.objectContaining({ label: 'B. Binary Search', description: '1 attempt' }),
+            ], expect.objectContaining({ placeHolder: 'Open which problem?' }));
+            expect(writtenPaths()).toEqual([`${ROOT}/problem-previews/B. Binary Search.md`]);
         });
 
-        await controller.openProblem({
-            description: 'Add two integers.',
-            order: 1,
-            publicId: 'pa1b2c3d4e5f6',
-            title: 'A + B',
+        it('does nothing when the problem quick pick is cancelled', async () => {
+            showQuickPick.mockResolvedValue(undefined);
+
+            const result = await buildLoggedInController(createFullSnapshot()).exportPublicCases();
+
+            expect(result).toBeNull();
+            expect(showQuickPick).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({
+                placeHolder: 'Export test cases for which problem?',
+            }));
+            expect(submissionWorkspace.pickExportDirectory).not.toHaveBeenCalled();
         });
 
-        expect(fsState.mkdir).toHaveBeenCalledWith('/workspace/.autojudge-state/problem-previews', {
-            recursive: true,
+        it('opens the current contest overview when the palette passes no contest', async () => {
+            const snapshot = createSnapshot();
+
+            const result = await buildLoggedInController(snapshot).openContestDashboard();
+
+            expect(result).toBe(snapshot.contest);
+            expect(writtenPaths()).toEqual([`${ROOT}/contest-dashboards/Contest Overview · Regional Final.md`]);
         });
-        expect(fsState.writeFile).toHaveBeenCalledWith(
-            '/workspace/.autojudge-state/problem-previews/a-b.md',
-            expect.stringContaining('# A + B'),
-            { encoding: 'utf-8' }
-        );
-        expect(fsState.writeFile.mock.calls[0][1]).toContain('Add two integers.');
-        expect(openTextDocument).toHaveBeenCalledWith('/workspace/.autojudge-state/problem-previews/a-b.md');
-        expect(executeCommand).toHaveBeenCalledWith('markdown.showPreview', document.uri, expect.any(Object));
-        expect(showTextDocument).not.toHaveBeenCalled();
-        expect(showErrorMessage).not.toHaveBeenCalled();
+
+        it('asks to log in first, with a Log In action, when logged out', async () => {
+            showErrorMessage.mockResolvedValue('Log In');
+            browserLogin.waitForHandoffCode.mockRejectedValue(new BrowserLoginError(LOGIN_FAILURE.CANCELLED, 'Login cancelled.'));
+
+            const controller = buildController();
+            await controller.openProblem();
+            await controller.openContestDashboard();
+            await controller.submitActiveFile();
+            await flushPromises();
+
+            expect(showErrorMessage).toHaveBeenCalledTimes(3);
+            expect(showErrorMessage).toHaveBeenCalledWith('Log in to AutoJudge Contest first.', 'Log In');
+            expect(showQuickPick).not.toHaveBeenCalled();
+            expect(browserLogin.waitForHandoffCode).toHaveBeenCalled();
+        });
     });
 
-    it('opens a contest dashboard preview from the contest item', async () => {
-        const document = { uri: 'file:///workspace/.autojudge-state/contest-dashboards/contest-k3m9x2p7q8w1a.md' };
-        openTextDocument.mockResolvedValue(document);
-
-        const controller = createContestController({
-            context,
-            executeCommand,
-            openTextDocument,
-            outputChannel,
-            browserLogin,
-            resolvePollIntervalMs,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            showWarningMessage,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-            withCancellableProgress,
-        });
-
-        const contest = {
-            publicId: 'k3m9x2p7q8w1a',
-            name: 'Regional Final',
-            duration: 180,
-            startTime: '2026-05-28T03:00:00.000Z',
-        };
-
-        const result = await controller.openContestDashboard(contest);
-
-        expect(fsState.mkdir).toHaveBeenCalledWith('/workspace/.autojudge-state/contest-dashboards', {
-            recursive: true,
-        });
-        expect(fsState.writeFile).toHaveBeenCalledWith(
-            '/workspace/.autojudge-state/contest-dashboards/contest-k3m9x2p7q8w1a.md',
-            expect.stringContaining('# Contest Overview · Regional Final'),
-            { encoding: 'utf-8' }
-        );
-        expect(openTextDocument).toHaveBeenCalledWith('/workspace/.autojudge-state/contest-dashboards/contest-k3m9x2p7q8w1a.md');
-        expect(executeCommand).toHaveBeenCalledWith('markdown.showPreview', document.uri, expect.any(Object));
-        expect(result).toEqual(contest);
-    });
-
-    it('shows Not started in the contest dashboard when the contest has no start time', async () => {
-        const document = { uri: 'file:///workspace/.autojudge-state/contest-dashboards/contest-k3m9x2p7q8w1a.md' };
-        openTextDocument.mockResolvedValue(document);
-
-        await buildController().openContestDashboard({
-            publicId: 'k3m9x2p7q8w1a',
-            name: 'Regional Final',
-            duration: 180,
-            startTime: null,
-            penaltyTime: 20,
-            freezeTime: 60,
-            teams: [],
-            problems: [],
-        });
-
-        const dashboard = fsState.writeFile.mock.calls.at(-1)[1];
-        expect(dashboard).toContain('- **Start:** Not started');
-        expect(dashboard).toContain('- **End:** Not started');
-        expect(dashboard).toContain('- **Remaining (when opened):** Not started');
-        expect(dashboard).not.toContain('1970');
-        expect(dashboard).not.toContain('Ended');
-    });
-
-    it('opens a submission details preview from the clicked submission item', async () => {
-        const document = { uri: 'file:///workspace/.autojudge-state/submission-details/submission-12.md' };
-        openTextDocument.mockResolvedValue(document);
-
-        const controller = createContestController({
-            context,
-            executeCommand,
-            openTextDocument,
-            outputChannel,
-            browserLogin,
-            resolvePollIntervalMs,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            withProgressNotification,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-            withCancellableProgress,
-        });
-
-        const submission = {
-            id: 12,
+    describe('submit', () => {
+        const pending = (id = 27) => ({
+            id,
             problem: { publicId: 'pa1b2c3d4e5f6', title: 'A + B' },
-            score: 90000,
-            status: 'ACCEPTED',
-            submittedAt: '2026-05-28T03:10:00.000Z',
-        };
-
-        const result = await controller.openSubmission(submission);
-
-        expect(fsState.mkdir).toHaveBeenCalledWith('/workspace/.autojudge-state/submission-details', {
-            recursive: true,
-        });
-        expect(fsState.writeFile).toHaveBeenCalledWith(
-            '/workspace/.autojudge-state/submission-details/submission-12.md',
-            expect.stringContaining('# Submission 12'),
-            { encoding: 'utf-8' }
-        );
-        expect(openTextDocument).toHaveBeenCalledWith('/workspace/.autojudge-state/submission-details/submission-12.md');
-        expect(executeCommand).toHaveBeenCalledWith('markdown.showPreview', document.uri, expect.any(Object));
-        expect(result).toEqual(submission);
-    });
-
-    it('opens a team standing preview from the clicked standing item', async () => {
-        const snapshot = createSnapshot();
-        treeProvider.getSnapshot.mockReturnValue(snapshot);
-        const document = { uri: 'file:///workspace/.autojudge-state/team-details/team-tninjas7f3a00.md' };
-        openTextDocument.mockResolvedValue(document);
-
-        const controller = createContestController({
-            context,
-            executeCommand,
-            openTextDocument,
-            outputChannel,
-            browserLogin,
-            resolvePollIntervalMs,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            withProgressNotification,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-            withCancellableProgress,
-        });
-
-        const team = snapshot.team.contest.teams[0];
-        const result = await controller.openTeamStanding(team);
-
-        expect(fsState.mkdir).toHaveBeenCalledWith('/workspace/.autojudge-state/team-details', {
-            recursive: true,
-        });
-        expect(fsState.writeFile).toHaveBeenCalledWith(
-            '/workspace/.autojudge-state/team-details/team-tninjas7f3a00.md',
-            expect.stringContaining('# Array Ninjas'),
-            { encoding: 'utf-8' }
-        );
-        expect(openTextDocument).toHaveBeenCalledWith('/workspace/.autojudge-state/team-details/team-tninjas7f3a00.md');
-        expect(executeCommand).toHaveBeenCalledWith('markdown.showPreview', document.uri, expect.any(Object));
-        expect(result).toEqual(team);
-    });
-
-    it('names the team standing preview by public id and ranks it from public-id standings', async () => {
-        const snapshot = createSnapshot();
-        treeProvider.getSnapshot.mockReturnValue(snapshot);
-        openTextDocument.mockResolvedValue({ uri: 'file:///workspace/.autojudge-state/team-details/team-tbits91cd0000.md' });
-
-        const controller = createContestController({
-            context,
-            executeCommand,
-            openTextDocument,
-            outputChannel,
-            browserLogin,
-            resolvePollIntervalMs,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            showWarningMessage,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-            withCancellableProgress,
-        });
-
-        await controller.openTeamStanding(snapshot.contest.teams[1]);
-
-        expect(fsState.writeFile).toHaveBeenCalledWith(
-            '/workspace/.autojudge-state/team-details/team-tbits91cd0000.md',
-            expect.any(String),
-            { encoding: 'utf-8' }
-        );
-        const [, content] = fsState.writeFile.mock.calls[0];
-        expect(content).toContain('- **Rank:** #2 of 2');
-        expect(content).toContain('- **Solved:** 1 of 2');
-        expect(content).toContain('- A. A + B');
-        expect(content).not.toContain('B. Binary Search');
-    });
-
-    it('submits the active file for the selected problem and refreshes the in-memory snapshot', async () => {
-        const snapshot = createSnapshot();
-        const createdSubmission = {
-            id: 27,
-            problem: {
-                publicId: 'pa1b2c3d4e5f6',
-                title: 'A + B',
-            },
             status: 'PENDING',
             submittedAt: '2026-05-28T04:00:00.000Z',
-        };
-        treeProvider.getSnapshot.mockReturnValue(snapshot);
-        submissionWorkspace.readActiveSourceFile.mockResolvedValue({
-            filename: 'main.cpp',
-            sourceCode: '#include <iostream>\nint main() { return 0; }\n',
-        });
-        sessionApi.submitSolution.mockResolvedValue(createdSubmission);
-
-        const controller = createContestController({
-            context,
-            openTextDocument,
-            outputChannel,
-            browserLogin,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            showWarningMessage,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-            withCancellableProgress,
         });
 
-        const result = await controller.submitActiveFile(snapshot.problems[0]);
+        beforeEach(() => {
+            showWarningMessage.mockImplementation(async (message) => (message.startsWith('Submit ') ? 'Submit' : undefined));
+            sessionApi.pollSubmissionResult.mockResolvedValue(null);
+        });
 
-        expect(sessionApi.submitSolution).toHaveBeenCalledWith({
-            baseUrl: 'https://api.autojudge.test',
-            code: Buffer.from('#include <iostream>\nint main() { return 0; }\n', 'utf-8').toString('base64'),
-            context,
-            filename: 'main.cpp',
-            problemId: 'pa1b2c3d4e5f6',
+        it('confirms, submits the tree item problem, merges the pending submission, and remembers the problem', async () => {
+            const snapshot = createSnapshot();
+            const created = pending();
+            sessionApi.submitSolution.mockResolvedValue(created);
+
+            const result = await buildLoggedInController(snapshot).submitActiveFile({ problem: snapshot.problems[0] });
+
+            expect(showWarningMessage).toHaveBeenCalledWith(
+                'Submit main.cpp to A. A + B?',
+                { modal: true, detail: 'A rejected submission adds 20 min of penalty.' },
+                'Submit',
+            );
+            expect(sessionApi.submitSolution).toHaveBeenCalledWith({
+                baseUrl: 'https://api.autojudge.test',
+                code: Buffer.from('int main() { return 0; }\n', 'utf-8').toString('base64'),
+                context,
+                filename: 'main.cpp',
+                problemId: 'pa1b2c3d4e5f6',
+            });
+            expect(treeProvider.setSnapshot).toHaveBeenCalledWith({ ...snapshot, submissions: [created] });
+            expect(statusBar.setPendingCount).toHaveBeenCalledWith(1);
+            expect(workspaceStateStore['autojudgeContest.lastProblemByFile']).toEqual({ '/workspace/main.cpp': 'pa1b2c3d4e5f6' });
+            expect(outputChannel.show).not.toHaveBeenCalled();
+            expect(showInformationMessage).not.toHaveBeenCalled();
+            expect(result).toEqual(created);
         });
-        expect(treeProvider.setSnapshot).toHaveBeenCalledWith({
-            ...snapshot,
-            submissions: [createdSubmission],
+
+        it('uses a generic penalty sentence when the contest penalty is unknown', async () => {
+            const snapshot = createSnapshot();
+            snapshot.contest = { ...snapshot.contest, penaltyTime: undefined };
+            sessionApi.submitSolution.mockResolvedValue(pending());
+
+            await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+
+            expect(showWarningMessage).toHaveBeenCalledWith(
+                'Submit main.cpp to A. A + B?',
+                { modal: true, detail: 'A rejected submission adds a penalty.' },
+                'Submit',
+            );
         });
-        expect(teamsStandingsProvider.setSnapshot).toHaveBeenCalledWith({
-            ...snapshot,
-            submissions: [createdSubmission],
+
+        it('does not submit when the confirmation is cancelled', async () => {
+            showWarningMessage.mockResolvedValue(undefined);
+            const snapshot = createSnapshot();
+
+            const result = await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+
+            expect(result).toBeNull();
+            expect(sessionApi.submitSolution).not.toHaveBeenCalled();
         });
-        expect(showInformationMessage).toHaveBeenCalledWith('Submitted main.cpp to A + B.');
-        expect(result).toEqual(createdSubmission);
+
+        it('skips the confirmation when confirmBeforeSubmit is off', async () => {
+            resolveConfirmBeforeSubmit.mockReturnValue(false);
+            const snapshot = createSnapshot();
+            sessionApi.submitSolution.mockResolvedValue(pending());
+
+            await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+
+            expect(showWarningMessage).not.toHaveBeenCalled();
+            expect(sessionApi.submitSolution).toHaveBeenCalledTimes(1);
+        });
+
+        it('asks which problem from the palette and preselects the one last submitted from this file', async () => {
+            const snapshot = createFullSnapshot();
+            workspaceStateStore['autojudgeContest.lastProblemByFile'] = { '/workspace/main.cpp': 'pb2c3d4e5f6a1' };
+            showQuickPick.mockImplementation(async (items) => items[0]);
+            sessionApi.submitSolution.mockResolvedValue({ ...pending(), problem: { publicId: 'pb2c3d4e5f6a1' } });
+
+            await buildLoggedInController(snapshot).submitActiveFile();
+
+            const [items, options] = showQuickPick.mock.calls[0];
+            expect(options).toEqual(expect.objectContaining({ placeHolder: 'Submit main.cpp to which problem?' }));
+            expect(items.map(item => item.label)).toEqual(['B. Binary Search', 'A. A + B']);
+            expect(items[0].picked).toBe(true);
+            expect(sessionApi.submitSolution).toHaveBeenCalledWith(expect.objectContaining({ problemId: 'pb2c3d4e5f6a1' }));
+        });
+
+        it('treats an editor-title Uri as "no problem chosen" and opens that file when it is not the active editor', async () => {
+            const snapshot = createFullSnapshot();
+            const otherFile = fileUri('/workspace/other.py');
+            showQuickPick.mockImplementation(async (items) => items[0]);
+            sessionApi.submitSolution.mockResolvedValue(pending());
+            submissionWorkspace.readActiveSourceFile
+                .mockResolvedValueOnce({ filename: 'main.cpp', sourceCode: 'x', uri: fileUri('/workspace/main.cpp'), isDirty: false })
+                .mockResolvedValue({ filename: 'other.py', sourceCode: 'print(1)', uri: otherFile, isDirty: false });
+
+            await buildLoggedInController(snapshot).submitActiveFile(otherFile);
+
+            expect(openTextDocument).toHaveBeenCalledWith(otherFile);
+            expect(showTextDocument).toHaveBeenCalled();
+            expect(showQuickPick).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({
+                placeHolder: 'Submit other.py to which problem?',
+            }));
+            expect(sessionApi.submitSolution).toHaveBeenCalledWith(expect.objectContaining({ filename: 'other.py' }));
+        });
+
+        it('does not reopen the file when the editor-title Uri is already the active editor', async () => {
+            showQuickPick.mockImplementation(async (items) => items[0]);
+            sessionApi.submitSolution.mockResolvedValue(pending());
+
+            await buildLoggedInController(createFullSnapshot()).submitActiveFile(fileUri('/workspace/main.cpp'));
+
+            expect(openTextDocument).not.toHaveBeenCalled();
+            expect(sessionApi.submitSolution).toHaveBeenCalledTimes(1);
+        });
+
+        it('saves a dirty file after the Save and Submit prompt and submits the saved content', async () => {
+            const snapshot = createSnapshot();
+            const document = { save: vi.fn(async () => true), getText: vi.fn(() => 'saved content') };
+            submissionWorkspace.readActiveSourceFile.mockResolvedValue({
+                filename: 'main.cpp', sourceCode: 'old content', uri: fileUri('/workspace/main.cpp'), document, isDirty: true,
+            });
+            showWarningMessage.mockResolvedValue('Save and Submit');
+            sessionApi.submitSolution.mockResolvedValue(pending());
+
+            await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+
+            expect(showWarningMessage).toHaveBeenCalledTimes(1);
+            expect(showWarningMessage).toHaveBeenCalledWith(
+                'main.cpp has unsaved changes.',
+                expect.objectContaining({ modal: true }),
+                'Save and Submit',
+            );
+            expect(document.save).toHaveBeenCalled();
+            expect(sessionApi.submitSolution).toHaveBeenCalledWith(expect.objectContaining({
+                code: Buffer.from('saved content', 'utf-8').toString('base64'),
+            }));
+        });
+
+        it('neither saves nor submits when the unsaved-changes prompt is cancelled', async () => {
+            const snapshot = createSnapshot();
+            const document = { save: vi.fn(async () => true), getText: vi.fn(() => '') };
+            submissionWorkspace.readActiveSourceFile.mockResolvedValue({
+                filename: 'main.cpp', sourceCode: 'x', uri: fileUri('/workspace/main.cpp'), document, isDirty: true,
+            });
+            showWarningMessage.mockResolvedValue(undefined);
+
+            await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+
+            expect(document.save).not.toHaveBeenCalled();
+            expect(sessionApi.submitSolution).not.toHaveBeenCalled();
+        });
+
+        it('polls a pending submission with an abort signal and shows Accepted as an information toast', async () => {
+            const snapshot = createSnapshot();
+            const final = { ...pending(), status: 'ACCEPTED' };
+            sessionApi.submitSolution.mockResolvedValue(pending());
+            sessionApi.pollSubmissionResult.mockResolvedValue(final);
+            showInformationMessage.mockResolvedValue('View Details');
+
+            const result = await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+            await flushPromises();
+
+            expect(sessionApi.pollSubmissionResult).toHaveBeenCalledWith({
+                baseUrl: 'https://api.autojudge.test',
+                context,
+                pollIntervalMs: 1500,
+                signal: expect.any(Object),
+                submissionId: 27,
+                timeoutMs: 120000,
+            });
+            expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith({ ...snapshot, submissions: [final] });
+            expect(statusBar.setPendingCount).toHaveBeenLastCalledWith(0);
+            expect(showInformationMessage).toHaveBeenCalledWith('Accepted: A. A + B (#27)', 'View Details');
+            expect(showWarningMessage).not.toHaveBeenCalledWith(expect.stringContaining('#27'), expect.anything());
+            // View Details opens the submission page.
+            expect(writtenPaths()).toContain(`${ROOT}/submission-details/Submission 27 · A. A + B.md`);
+            expect(result).toEqual(final);
+        });
+
+        it('shows a rejected verdict as a warning with View Details and Compare Output', async () => {
+            const snapshot = createSnapshot();
+            const final = { ...pending(), status: 'WRONG_ANSWER', hint: { expected: '3\n', received: '4\n' } };
+            sessionApi.submitSolution.mockResolvedValue(pending());
+            sessionApi.pollSubmissionResult.mockResolvedValue(final);
+            showWarningMessage.mockImplementation(async (message) => {
+                if (message.startsWith('Submit ')) {
+                    return 'Submit';
+                }
+                return message.startsWith('Wrong Answer') ? 'Compare Output' : undefined;
+            });
+
+            await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+            await flushPromises();
+
+            expect(showWarningMessage).toHaveBeenCalledWith('Wrong Answer on A. A + B (#27)', 'View Details', 'Compare Output');
+            expect(showInformationMessage).not.toHaveBeenCalled();
+            expect(executeCommand).toHaveBeenCalledWith(
+                'vscode.diff',
+                fileUri(`${ROOT}/submission-output/27/expected.txt`),
+                fileUri(`${ROOT}/submission-output/27/received.txt`),
+                'Submission #27: expected ↔ received',
+            );
+        });
+
+        it('returns without awaiting the verdict toast', async () => {
+            const snapshot = createSnapshot();
+            sessionApi.submitSolution.mockResolvedValue(pending());
+            sessionApi.pollSubmissionResult.mockResolvedValue({ ...pending(), status: 'ACCEPTED' });
+            showInformationMessage.mockReturnValue(new Promise(() => {}));
+
+            await expect(buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]))
+                .resolves.toEqual(expect.objectContaining({ status: 'ACCEPTED' }));
+        });
+
+        it('only logs when the submission is still pending after the poll timeout', async () => {
+            const snapshot = createSnapshot();
+            sessionApi.submitSolution.mockResolvedValue(pending());
+            sessionApi.pollSubmissionResult.mockResolvedValue(null);
+
+            const result = await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+
+            expect(outputChannel.appendLine).toHaveBeenCalledWith('Submission #27 is still being judged. Refresh later to see the verdict.');
+            expect(showInformationMessage).not.toHaveBeenCalled();
+            expect(showErrorMessage).not.toHaveBeenCalled();
+            expect(result).toEqual(pending());
+        });
+
+        it('handles an ended session found while polling a submission verdict', async () => {
+            const snapshot = createSnapshot();
+            sessionApi.submitSolution.mockResolvedValue(pending(5));
+            sessionApi.pollSubmissionResult.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
+
+            await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+
+            expect(sessionApi.clearStoredSession).toHaveBeenCalledWith(context);
+            expect(showWarningMessage).toHaveBeenCalledWith(expect.stringContaining('Your session ended'), 'Log In');
+            expect(showErrorMessage).not.toHaveBeenCalled();
+        });
+
+        it('keeps the public id on a returned submission that lacks its problem', async () => {
+            const snapshot = createSnapshot();
+            sessionApi.submitSolution.mockResolvedValue({ id: 28, status: 'ACCEPTED' });
+
+            await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+
+            expect(treeProvider.setSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+                submissions: [{ id: 28, status: 'ACCEPTED', problem: { publicId: 'pa1b2c3d4e5f6', title: 'A + B' } }],
+            }));
+            expect(sessionApi.pollSubmissionResult).not.toHaveBeenCalled();
+        });
     });
 
-    it('submits to a public-id-only problem and keeps the public id on the local submission', async () => {
-        const snapshot = createSnapshot();
-        const [publicProblem] = snapshot.problems;
-        treeProvider.getSnapshot.mockReturnValue(snapshot);
-        submissionWorkspace.readActiveSourceFile.mockResolvedValue({
-            filename: 'main.cpp',
-            sourceCode: 'int main() { return 0; }\n',
-        });
-        sessionApi.submitSolution.mockResolvedValue({ id: 28, status: 'ACCEPTED' });
+    describe('auto-polling pending submissions', () => {
+        it('polls every pending submission once after a refresh, even when refreshed again', async () => {
+            const snapshot = {
+                ...createSnapshot(),
+                submissions: [
+                    { id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } },
+                    { id: 2, status: 'ACCEPTED', problem: { publicId: 'pa1b2c3d4e5f6' } },
+                    { id: 3, status: 'JUDGING', problem: { publicId: 'pa1b2c3d4e5f6' } },
+                ],
+            };
+            sessionApi.restoreContestSession.mockResolvedValue(snapshot);
+            sessionApi.pollSubmissionResult.mockReturnValue(new Promise(() => {}));
+            const controller = buildController();
 
-        const controller = createContestController({
-            context,
-            openTextDocument,
-            outputChannel,
-            browserLogin,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            showWarningMessage,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-            withCancellableProgress,
+            await controller.refreshTree({ silent: true });
+            await controller.refreshTree();
+
+            expect(sessionApi.pollSubmissionResult.mock.calls.map(([options]) => options.submissionId)).toEqual([1, 3]);
+            expect(statusBar.setPendingCount).toHaveBeenLastCalledWith(2);
         });
 
-        await controller.submitActiveFile(publicProblem);
+        it('stops polling on logout and ignores a verdict that arrives afterwards', async () => {
+            const snapshot = { ...createSnapshot(), submissions: [{ id: 1, status: 'PENDING', problem: { publicId: 'pa1b2c3d4e5f6' } }] };
+            sessionApi.restoreContestSession.mockResolvedValue(snapshot);
+            let resolvePoll;
+            sessionApi.pollSubmissionResult.mockReturnValue(new Promise((resolve) => {
+                resolvePoll = resolve;
+            }));
+            const controller = buildController();
 
-        expect(sessionApi.submitSolution).toHaveBeenCalledWith(expect.objectContaining({
-            problemId: 'pa1b2c3d4e5f6',
-        }));
-        expect(treeProvider.setSnapshot).toHaveBeenCalledWith(expect.objectContaining({
-            submissions: [{ id: 28, status: 'ACCEPTED', problem: { publicId: 'pa1b2c3d4e5f6', title: 'A + B' } }],
-        }));
+            await controller.refreshTree({ silent: true });
+            const { signal } = sessionApi.pollSubmissionResult.mock.calls[0][0];
+            await controller.logoutTeam();
+
+            expect(signal.aborted).toBe(true);
+            resolvePoll({ id: 1, status: 'ACCEPTED', problem: { publicId: 'pa1b2c3d4e5f6' } });
+            await flushPromises();
+
+            expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(null);
+            expect(showInformationMessage).not.toHaveBeenCalled();
+        });
     });
 
-    it('polls a pending submission until a final verdict arrives and refreshes the visible submission item', async () => {
-        const snapshot = createSnapshot();
-        const createdSubmission = {
-            id: 27,
-            problem: {
-                publicId: 'pa1b2c3d4e5f6',
-                title: 'A + B',
-            },
-            status: 'PENDING',
-            submittedAt: '2026-05-28T04:00:00.000Z',
-        };
-        const finalSubmission = {
-            id: 27,
-            problem: {
-                publicId: 'pa1b2c3d4e5f6',
-                title: 'A + B',
-            },
-            status: 'ACCEPTED',
-            submittedAt: '2026-05-28T04:00:00.000Z',
-        };
-        treeProvider.getSnapshot.mockReturnValue(snapshot);
-        submissionWorkspace.readActiveSourceFile.mockResolvedValue({
-            filename: 'main.cpp',
-            sourceCode: '#include <iostream>\nint main() { return 0; }\n',
-        });
-        sessionApi.submitSolution.mockResolvedValue(createdSubmission);
-        sessionApi.pollSubmissionResult.mockResolvedValue(finalSubmission);
+    describe('compare output', () => {
+        it('writes expected and received output and opens a diff', async () => {
+            const submission = { id: 852, status: 'WRONG_ANSWER', hint: { expected: '3\n', received: '4\n' } };
 
-        const controller = createContestController({
-            context,
-            openTextDocument,
-            outputChannel,
-            browserLogin,
-            resolvePollIntervalMs,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            withProgressNotification,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-            withCancellableProgress,
+            const result = await buildController().compareSubmissionOutput({ submission });
+
+            expect(fsState.mkdir).toHaveBeenCalledWith(`${ROOT}/submission-output/852`, { recursive: true });
+            expect(fsState.writeFile).toHaveBeenCalledWith(`${ROOT}/submission-output/852/expected.txt`, '3\n', { encoding: 'utf-8' });
+            expect(fsState.writeFile).toHaveBeenCalledWith(`${ROOT}/submission-output/852/received.txt`, '4\n', { encoding: 'utf-8' });
+            expect(executeCommand).toHaveBeenCalledWith(
+                'vscode.diff',
+                fileUri(`${ROOT}/submission-output/852/expected.txt`),
+                fileUri(`${ROOT}/submission-output/852/received.txt`),
+                'Submission #852: expected ↔ received',
+            );
+            expect(result).toEqual({
+                expectedPath: `${ROOT}/submission-output/852/expected.txt`,
+                receivedPath: `${ROOT}/submission-output/852/received.txt`,
+            });
         });
 
-        const result = await controller.submitActiveFile(snapshot.problems[0]);
+        it('shows an error when the submission has no output to compare', async () => {
+            const result = await buildController().compareSubmissionOutput({ id: 9, status: 'ACCEPTED' });
 
-        expect(sessionApi.pollSubmissionResult).toHaveBeenCalledWith({
-            baseUrl: 'https://api.autojudge.test',
-            context,
-            pollIntervalMs: 1500,
-            submissionId: 27,
-            timeoutMs: 120000,
+            expect(result).toBeNull();
+            expect(showErrorMessage).toHaveBeenCalledWith('Submission #9 has no output to compare.');
+            expect(executeCommand).not.toHaveBeenCalled();
         });
-        expect(treeProvider.setSnapshot).toHaveBeenNthCalledWith(1, {
-            ...snapshot,
-            submissions: [createdSubmission],
-        });
-        expect(treeProvider.setSnapshot).toHaveBeenNthCalledWith(2, {
-            ...snapshot,
-            submissions: [finalSubmission],
-        });
-        expect(withProgressNotification).toHaveBeenCalledWith(
-            'Waiting for the final verdict for submission #27.',
-            expect.any(Function)
-        );
-        expect(showInformationMessage).toHaveBeenCalledWith('Submitted main.cpp to A + B.');
-        expect(showInformationMessage).toHaveBeenCalledWith('Submission #27 finished with Accepted.');
-        expect(result).toEqual(finalSubmission);
     });
 
-    it('starts the judging progress notification without waiting for transient info messages to resolve', async () => {
-        const snapshot = createSnapshot();
-        const createdSubmission = {
-            id: 27,
-            problem: {
-                publicId: 'pa1b2c3d4e5f6',
-                title: 'A + B',
-            },
-            status: 'PENDING',
-            submittedAt: '2026-05-28T04:00:00.000Z',
-        };
-        const finalSubmission = {
-            id: 27,
-            problem: {
-                publicId: 'pa1b2c3d4e5f6',
-                title: 'A + B',
-            },
-            status: 'ACCEPTED',
-            submittedAt: '2026-05-28T04:00:00.000Z',
-        };
-        let resolveSubmittedMessage;
-        treeProvider.getSnapshot.mockReturnValue(snapshot);
-        submissionWorkspace.readActiveSourceFile.mockResolvedValue({
-            filename: 'main.cpp',
-            sourceCode: '#include <iostream>\nint main() { return 0; }\n',
-        });
-        sessionApi.submitSolution.mockResolvedValue(createdSubmission);
-        sessionApi.pollSubmissionResult.mockResolvedValue(finalSubmission);
-        showInformationMessage
-            .mockImplementationOnce(() => new Promise(resolve => {
-                resolveSubmittedMessage = resolve;
-            }))
-            .mockResolvedValue(undefined);
-
-        const controller = createContestController({
-            context,
-            openTextDocument,
-            outputChannel,
-            browserLogin,
-            resolvePollIntervalMs,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            withProgressNotification,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-            withCancellableProgress,
-        });
-
-        const pendingResult = controller.submitActiveFile(snapshot.problems[0]);
-
-        await flushPromises();
-
-        expect(withProgressNotification).toHaveBeenCalledWith(
-            'Waiting for the final verdict for submission #27.',
-            expect.any(Function)
-        );
-        expect(sessionApi.pollSubmissionResult).toHaveBeenCalledWith({
-            baseUrl: 'https://api.autojudge.test',
-            context,
-            pollIntervalMs: 1500,
-            submissionId: 27,
-            timeoutMs: 120000,
-        });
-
-        resolveSubmittedMessage();
-
-        await expect(pendingResult).resolves.toEqual(finalSubmission);
-    });
-
-    it('stops polling safely when the submission stays pending', async () => {
-        const snapshot = createSnapshot();
-        const createdSubmission = {
-            id: 27,
-            problem: {
-                publicId: 'pa1b2c3d4e5f6',
-                title: 'A + B',
-            },
-            status: 'PENDING',
-            submittedAt: '2026-05-28T04:00:00.000Z',
-        };
-        treeProvider.getSnapshot.mockReturnValue(snapshot);
-        submissionWorkspace.readActiveSourceFile.mockResolvedValue({
-            filename: 'main.cpp',
-            sourceCode: '#include <iostream>\nint main() { return 0; }\n',
-        });
-        sessionApi.submitSolution.mockResolvedValue(createdSubmission);
-        sessionApi.pollSubmissionResult.mockResolvedValue(null);
-
-        const controller = createContestController({
-            context,
-            openTextDocument,
-            outputChannel,
-            browserLogin,
-            resolvePollIntervalMs,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            withProgressNotification,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-            withCancellableProgress,
-        });
-
-        const result = await controller.submitActiveFile(snapshot.problems[0]);
-
-        expect(sessionApi.pollSubmissionResult).toHaveBeenCalledWith({
-            baseUrl: 'https://api.autojudge.test',
-            context,
-            pollIntervalMs: 1500,
-            submissionId: 27,
-            timeoutMs: 120000,
-        });
-        expect(treeProvider.setSnapshot).toHaveBeenCalledTimes(1);
-        expect(treeProvider.setSnapshot).toHaveBeenCalledWith({
-            ...snapshot,
-            submissions: [createdSubmission],
-        });
-        expect(withProgressNotification).toHaveBeenCalledWith(
-            'Waiting for the final verdict for submission #27.',
-            expect.any(Function)
-        );
-        expect(showInformationMessage).toHaveBeenCalledWith('Submitted main.cpp to A + B.');
-        expect(showInformationMessage).toHaveBeenCalledWith('Submission #27 is still pending. Refresh the explorer later for the final result.');
-        expect(showErrorMessage).not.toHaveBeenCalled();
-        expect(result).toEqual(createdSubmission);
-    });
-
-    it('exports public cases for the selected problem into testcase files', async () => {
-        const snapshot = createSnapshot();
-        submissionWorkspace.exportPublicCases.mockResolvedValue({
-            destinationUri: { fsPath: '/workspace/cases' },
+    describe('export public cases', () => {
+        const exportResult = {
+            destinationUri: fileUri('/workspace/cases'),
             writtenPairs: [{
-                inputUri: { fsPath: '/workspace/cases/prob-a-public-01.in' },
-                outputUri: { fsPath: '/workspace/cases/prob-a-public-01.out' },
+                inputUri: fileUri('/workspace/cases/a-b-testcase-01.in'),
+                outputUri: fileUri('/workspace/cases/a-b-testcase-01.out'),
             }],
-        });
-
-        const controller = createContestController({
-            context,
-            openTextDocument,
-            outputChannel,
-            browserLogin,
-            resolvePollIntervalMs,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            showWarningMessage,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-            withCancellableProgress,
-        });
-
-        const result = await controller.exportPublicCases(snapshot.problems[0]);
-
-        expect(submissionWorkspace.exportPublicCases).toHaveBeenCalledWith(snapshot.problems[0], [{
-            input: '1 2\n',
-            output: '3\n',
-        }]);
-        expect(showInformationMessage).toHaveBeenCalledWith('Exported 1 public testcase pair for A + B.');
-        expect(result).toEqual(expect.objectContaining({
-            writtenPairs: expect.any(Array),
-        }));
-    });
-
-    it('exports public cases from top-level API input and output fields', async () => {
-        submissionWorkspace.exportPublicCases.mockResolvedValue({
-            destinationUri: { fsPath: '/workspace/cases' },
-            writtenPairs: [{
-                inputUri: { fsPath: '/workspace/cases/prob-a-public-01.in' },
-                outputUri: { fsPath: '/workspace/cases/prob-a-public-01.out' },
-            }],
-        });
-
-        const controller = createContestController({
-            context,
-            openTextDocument,
-            outputChannel,
-            browserLogin,
-            resolvePollIntervalMs,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            showWarningMessage,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-            withCancellableProgress,
-        });
-
-        const selectedProblem = {
-            publicId: 'pa1b2c3d4e5f6',
-            input: '1 2\n',
-            output: '3\n',
-            title: 'A + B',
         };
 
-        const result = await controller.exportPublicCases(selectedProblem);
+        it('exports into the picked folder and offers Reveal in Explorer', async () => {
+            const snapshot = createSnapshot();
+            submissionWorkspace.exportPublicCases.mockResolvedValue(exportResult);
+            showInformationMessage.mockResolvedValue('Reveal in Explorer');
 
-        expect(submissionWorkspace.exportPublicCases).toHaveBeenCalledWith(selectedProblem, [{
-            input: '1 2\n',
-            output: '3\n',
-        }]);
-        expect(showInformationMessage).toHaveBeenCalledWith('Exported 1 public testcase pair for A + B.');
-        expect(result).toEqual(expect.objectContaining({
-            writtenPairs: expect.any(Array),
-        }));
+            const result = await buildLoggedInController(snapshot).exportPublicCases({ problem: snapshot.problems[0] });
+            await flushPromises();
+
+            expect(submissionWorkspace.findExistingCaseFiles).toHaveBeenCalledWith(snapshot.problems[0], 1, fileUri('/workspace/cases'));
+            expect(submissionWorkspace.exportPublicCases).toHaveBeenCalledWith(
+                snapshot.problems[0],
+                [{ input: '1 2\n', output: '3\n' }],
+                { directoryUri: fileUri('/workspace/cases') },
+            );
+            expect(showInformationMessage).toHaveBeenCalledWith(
+                'Exported 1 public test case for A. A + B.',
+                'Reveal in Explorer',
+                'Open First Case',
+            );
+            expect(executeCommand).toHaveBeenCalledWith('revealInExplorer', exportResult.writtenPairs[0].inputUri);
+            expect(result).toBe(exportResult);
+        });
+
+        it('opens the first input file when Open First Case is chosen', async () => {
+            submissionWorkspace.exportPublicCases.mockResolvedValue(exportResult);
+            showInformationMessage.mockResolvedValue('Open First Case');
+
+            await buildController().exportPublicCases({ publicId: 'pa1b2c3d4e5f6', title: 'A + B', input: '1 2\n', output: '3\n' });
+            await flushPromises();
+
+            expect(openTextDocument).toHaveBeenCalledWith(exportResult.writtenPairs[0].inputUri);
+            expect(showTextDocument).toHaveBeenCalled();
+        });
+
+        it('returns quietly when the folder dialog is cancelled', async () => {
+            submissionWorkspace.pickExportDirectory.mockResolvedValue(undefined);
+            const snapshot = createSnapshot();
+
+            const result = await buildLoggedInController(snapshot).exportPublicCases(snapshot.problems[0]);
+
+            expect(result).toBeNull();
+            expect(submissionWorkspace.exportPublicCases).not.toHaveBeenCalled();
+            expect(showErrorMessage).not.toHaveBeenCalled();
+            expect(showInformationMessage).not.toHaveBeenCalled();
+        });
+
+        it('asks before replacing existing test case files and stops when declined', async () => {
+            const snapshot = createSnapshot();
+            submissionWorkspace.findExistingCaseFiles.mockResolvedValue([
+                fileUri('/workspace/cases/a-b-testcase-01.in'),
+                fileUri('/workspace/cases/a-b-testcase-01.out'),
+            ]);
+            showWarningMessage.mockResolvedValue(undefined);
+
+            const result = await buildLoggedInController(snapshot).exportPublicCases(snapshot.problems[0]);
+
+            expect(showWarningMessage).toHaveBeenCalledWith('Replace 2 existing test case files in cases?', { modal: true }, 'Replace');
+            expect(submissionWorkspace.exportPublicCases).not.toHaveBeenCalled();
+            expect(result).toBeNull();
+        });
+
+        it('replaces existing files when Replace is chosen', async () => {
+            const snapshot = createSnapshot();
+            submissionWorkspace.findExistingCaseFiles.mockResolvedValue([fileUri('/workspace/cases/a-b-testcase-01.in')]);
+            submissionWorkspace.exportPublicCases.mockResolvedValue(exportResult);
+            showWarningMessage.mockResolvedValue('Replace');
+
+            await buildLoggedInController(snapshot).exportPublicCases(snapshot.problems[0]);
+
+            expect(showWarningMessage).toHaveBeenCalledWith('Replace 1 existing test case file in cases?', { modal: true }, 'Replace');
+            expect(submissionWorkspace.exportPublicCases).toHaveBeenCalledTimes(1);
+        });
+
+        it('shows an information message when the problem has no public test cases', async () => {
+            const snapshot = createFullSnapshot();
+
+            const result = await buildLoggedInController(snapshot).exportPublicCases(snapshot.problems[1]);
+
+            expect(result).toBeNull();
+            expect(showInformationMessage).toHaveBeenCalledWith('B. Binary Search has no public test cases.');
+            expect(showErrorMessage).not.toHaveBeenCalled();
+            expect(submissionWorkspace.pickExportDirectory).not.toHaveBeenCalled();
+        });
     });
 
-    it('shows a concise error when the selected problem has no public cases', async () => {
-        const controller = createContestController({
-            context,
-            openTextDocument,
-            outputChannel,
-            browserLogin,
-            resolvePollIntervalMs,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            showWarningMessage,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-            withCancellableProgress,
+    describe('refresh cadence', () => {
+        /**
+         * Log in with fake timers and the given views.
+         * @param {object} views
+         * @returns {Promise<{ controller: object, snapshot: object }>}
+         */
+        async function loginWithViews(views) {
+            vi.useFakeTimers();
+            const snapshot = createSnapshot();
+            browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
+            sessionApi.redeemAndLoadContest.mockResolvedValue(snapshot);
+            sessionApi.refreshContestDetails.mockResolvedValue({ ...snapshot.contest, name: 'Regional Final (live)' });
+            const controller = buildController(views);
+            await controller.loginTeam();
+            return { controller, snapshot };
+        }
+
+        it('refreshes standings every 15 s while Standings is visible, without re-rendering the explorer', async () => {
+            const teamsView = createFakeView(true);
+            const { snapshot } = await loginWithViews({ teamsView, explorerView: createFakeView(true) });
+            const explorerSetCalls = treeProvider.setSnapshot.mock.calls.length;
+
+            await vi.advanceTimersByTimeAsync(15000);
+
+            expect(sessionApi.refreshContestDetails).toHaveBeenCalledWith({
+                baseUrl: 'https://api.autojudge.test',
+                contest: snapshot.contest,
+                context,
+            });
+            expect(teamsStandingsProvider.setSnapshot).toHaveBeenLastCalledWith(expect.objectContaining({
+                contest: expect.objectContaining({ name: 'Regional Final (live)' }),
+            }));
+            expect(statusBar.update).toHaveBeenLastCalledWith(expect.objectContaining({
+                contest: expect.objectContaining({ name: 'Regional Final (live)' }),
+            }));
+            expect(treeProvider.setSnapshot).toHaveBeenCalledTimes(explorerSetCalls);
+            expect(treeProvider.refresh).not.toHaveBeenCalled();
         });
 
-        const result = await controller.exportPublicCases({
-            publicId: 'pa1b2c3d4e5f6',
-            title: 'A + B',
+        it('refreshes standings every 60 s while Standings is hidden and at once when it becomes visible', async () => {
+            const teamsView = createFakeView(false);
+            await loginWithViews({ teamsView, explorerView: createFakeView(false) });
+
+            await vi.advanceTimersByTimeAsync(15000);
+            expect(sessionApi.refreshContestDetails).not.toHaveBeenCalled();
+
+            await vi.advanceTimersByTimeAsync(45000);
+            expect(sessionApi.refreshContestDetails).toHaveBeenCalledTimes(1);
+
+            teamsView.setVisible(true);
+            await vi.advanceTimersByTimeAsync(0);
+            expect(sessionApi.refreshContestDetails).toHaveBeenCalledTimes(2);
+
+            await vi.advanceTimersByTimeAsync(15000);
+            expect(sessionApi.refreshContestDetails).toHaveBeenCalledTimes(3);
         });
 
-        expect(submissionWorkspace.exportPublicCases).not.toHaveBeenCalled();
-        expect(showErrorMessage).toHaveBeenCalledWith('No public cases available for A + B.');
-        expect(outputChannel.appendLine).toHaveBeenCalledWith('ERROR: No public cases available for A + B.');
-        expect(result).toBeNull();
+        it('re-renders the explorer every 60 s only while it is visible', async () => {
+            const explorerView = createFakeView(false);
+            await loginWithViews({ teamsView: createFakeView(false), explorerView });
+
+            await vi.advanceTimersByTimeAsync(60000);
+            expect(treeProvider.refresh).not.toHaveBeenCalled();
+
+            explorerView.setVisible(true);
+            expect(treeProvider.refresh).toHaveBeenCalledTimes(1);
+
+            await vi.advanceTimersByTimeAsync(60000);
+            expect(treeProvider.refresh).toHaveBeenCalledTimes(2);
+        });
+
+        it('stops all timers on logout', async () => {
+            const { controller } = await loginWithViews({ teamsView: createFakeView(true), explorerView: createFakeView(true) });
+
+            await controller.logoutTeam();
+            await vi.advanceTimersByTimeAsync(120000);
+
+            expect(sessionApi.refreshContestDetails).not.toHaveBeenCalled();
+            expect(treeProvider.refresh).not.toHaveBeenCalled();
+        });
+
+        it('handles an ended session found by the timed standings refresh', async () => {
+            await loginWithViews({});
+            sessionApi.refreshContestDetails.mockRejectedValue(apiError(401, 'SESSION_ENDED', 'ended'));
+
+            await vi.advanceTimersByTimeAsync(15000);
+
+            expect(sessionApi.clearStoredSession).toHaveBeenCalledWith(context);
+            expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith(null);
+            expect(showWarningMessage).toHaveBeenCalledTimes(1);
+            expect(outputChannel.appendLine).not.toHaveBeenCalledWith(expect.stringContaining('Standings refresh failed'));
+        });
+    });
+});
+
+describe('logToChannel', () => {
+    it('uses the LogOutputChannel level methods when available', () => {
+        const channel = { appendLine: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+        logToChannel(channel, 'info', 'a');
+        logToChannel(channel, 'warn', 'b');
+        logToChannel(channel, 'error', 'c');
+
+        expect(channel.info).toHaveBeenCalledWith('a');
+        expect(channel.warn).toHaveBeenCalledWith('b');
+        expect(channel.error).toHaveBeenCalledWith('c');
+        expect(channel.appendLine).not.toHaveBeenCalled();
     });
 
-    it('refreshes the standings snapshot on a fixed timer after login without relying on provider-owned snapshot state', async () => {
-        vi.useFakeTimers();
+    it('falls back to appendLine for plain channels', () => {
+        const channel = { appendLine: vi.fn() };
 
-        const snapshot = createSnapshot();
-        const [ninjas, bits] = snapshot.contest.teams;
-        const liveContest = {
-            ...snapshot.contest,
-            name: 'Regional Final (live)',
-            teams: [
-                ninjas,
-                { ...bits, score: 300000, solvedProblemIds: ['pa1b2c3d4e5f6', 'pb2c3d4e5f6a1'] },
-            ],
-        };
-        browserLogin.waitForHandoffCode.mockResolvedValue('handoff-code');
-        sessionApi.redeemAndLoadContest.mockResolvedValue(snapshot);
-        sessionApi.refreshContestDetails.mockResolvedValue(liveContest);
-        treeProvider.getSnapshot.mockReturnValue(null);
-        openTextDocument.mockResolvedValue({ uri: 'file:///workspace/.autojudge-state/team-details/team-tninjas7f3a00.md' });
+        logToChannel(channel, 'error', 'failed');
 
-        const controller = createContestController({
-            context,
-            executeCommand,
-            openTextDocument,
-            outputChannel,
-            browserLogin,
-            resolvePollIntervalMs,
-            resolveBaseUrl,
-            sessionApi,
-            setContext,
-            showInformationMessage,
-            showTextDocument,
-            showErrorMessage,
-            showWarningMessage,
-            submissionWorkspace,
-            teamsStandingsProvider,
-            treeProvider,
-            withCancellableProgress,
-        });
-
-        await controller.loginTeam();
-        await vi.advanceTimersByTimeAsync(15000);
-
-        expect(sessionApi.refreshContestDetails).toHaveBeenCalledWith({
-            baseUrl: 'https://api.autojudge.test',
-            contest: snapshot.contest,
-            context,
-        });
-        expect(teamsStandingsProvider.setSnapshot).toHaveBeenLastCalledWith(expect.objectContaining({
-            contest: liveContest,
-        }));
-
-        // Bits now leads the refreshed standings (same solved count, less total time), so Array Ninjas drops to #2.
-        await controller.openTeamStanding(liveContest.teams[0]);
-        expect(fsState.writeFile).toHaveBeenLastCalledWith(
-            '/workspace/.autojudge-state/team-details/team-tninjas7f3a00.md',
-            expect.any(String),
-            { encoding: 'utf-8' }
-        );
-        const [, content] = fsState.writeFile.mock.calls.at(-1);
-        expect(content).toContain('- **Rank:** #2 of 2');
-        expect(content).toContain('- **Solved:** 2 of 2');
-
-        controller.dispose();
-        vi.useRealTimers();
+        expect(channel.appendLine).toHaveBeenCalledWith('failed');
     });
 });
