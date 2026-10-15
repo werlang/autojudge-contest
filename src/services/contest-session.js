@@ -96,14 +96,16 @@ export async function submitSolution({ baseUrl, code, context, filename, problem
 
 /**
  * Poll the authenticated submission history until one submission reaches a
- * final verdict or the timeout expires.
- * @param {{ baseUrl: string, context: import('vscode').ExtensionContext | { secrets: object, globalState: object }, pollIntervalMs?: number, submissionId: number | string, timeoutMs?: number }} options
- * @returns {Promise<object | null>}
+ * final verdict, the timeout expires, or `signal` is aborted (logout,
+ * session end, deactivation).
+ * @param {{ baseUrl: string, context: import('vscode').ExtensionContext | { secrets: object, globalState: object }, pollIntervalMs?: number, signal?: AbortSignal, submissionId: number | string, timeoutMs?: number }} options
+ * @returns {Promise<object | null>} the final submission, or null on timeout or abort
  */
 export async function pollSubmissionResult({
     baseUrl,
     context,
     pollIntervalMs = getPollIntervalMs(),
+    signal,
     submissionId,
     timeoutMs = DEFAULT_SUBMISSION_POLL_TIMEOUT_MS,
 }) {
@@ -118,7 +120,7 @@ export async function pollSubmissionResult({
         throw new Error('Submission polling requires a submission id.');
     }
 
-    while (Date.now() - startedAt < timeoutMs) {
+    while (!signal?.aborted && Date.now() - startedAt < timeoutMs) {
         // Reuse the authenticated submissions feed so the controller updates the
         // same explorer item shape already rendered elsewhere in the extension.
         const submissionResponse = await getSubmissions({
@@ -136,7 +138,7 @@ export async function pollSubmissionResult({
             break;
         }
 
-        await delay(pollIntervalMs);
+        await delay(pollIntervalMs, signal);
     }
 
     return null;
@@ -206,11 +208,26 @@ function mergeContestSnapshot(summaryContest, detailedContest) {
 
 /**
  * Delay the next submission refresh without busy-waiting the extension host.
+ * Resolves early when `signal` is aborted so a stopped poll ends promptly.
  * @param {number} ms
+ * @param {AbortSignal} [signal]
  * @returns {Promise<void>}
  */
-function delay(ms) {
+function delay(ms, signal) {
     return new Promise(resolve => {
-        setTimeout(resolve, Math.max(ms, 0));
+        if (signal?.aborted) {
+            resolve();
+            return;
+        }
+
+        const onAbort = () => {
+            clearTimeout(timer);
+            resolve();
+        };
+        const timer = setTimeout(() => {
+            signal?.removeEventListener?.('abort', onAbort);
+            resolve();
+        }, Math.max(ms, 0));
+        signal?.addEventListener?.('abort', onAbort, { once: true });
     });
 }
