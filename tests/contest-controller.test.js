@@ -1478,6 +1478,27 @@ describe('contest controller', () => {
             expect(sessionApi.restoreContestSession).toHaveBeenCalledTimes(2);
         });
 
+        it.each([
+            ['an invalid hand-off code', apiError(400, 'HANDOFF_INVALID', 'expired')],
+            ['a network error', new Error('fetch failed')],
+        ])('clears the redeem guard when redeeming fails with %s', async (_label, failure) => {
+            vi.useFakeTimers();
+            const old = createSnapshot();
+            sessionApi.restoreContestSession.mockResolvedValue(old);
+            sessionApi.refreshContestDetails.mockResolvedValue(old.contest);
+            browserLogin.waitForHandoffCode.mockResolvedValue('used-code');
+            sessionApi.redeemAndLoadContest.mockRejectedValue(failure);
+            const controller = buildController({ teamsView: createFakeView(true) });
+            await controller.refreshTree({ silent: true });
+
+            await controller.loginTeam();
+            await controller.refreshTree();
+            expect(sessionApi.restoreContestSession).toHaveBeenCalledTimes(2);
+
+            await vi.advanceTimersByTimeAsync(15000);
+            expect(sessionApi.refreshContestDetails).toHaveBeenCalledTimes(1);
+        });
+
         it('keeps skipping restore and standings while a second login still redeems after the first settles', async () => {
             vi.useFakeTimers();
             const old = createSnapshot();
