@@ -532,8 +532,9 @@ function formatTableCell(value) {
 /**
  * Escape a user- or server-provided value for inline Markdown so it renders as
  * the plain text it is: newlines collapse to spaces, HTML `< > &` become
- * entities, Markdown control characters are backslash-escaped, and a leading
- * `#`, `>`, `-`, `+`, `=` or `1.` that could start a block is escaped too.
+ * entities, Markdown control characters and every `#` are backslash-escaped
+ * (a trailing `#` would otherwise close an ATX heading), and a leading `+`,
+ * `-`, `=` or `1.` that could start a block is escaped too.
  * @param {unknown} value
  * @returns {string}
  */
@@ -542,8 +543,8 @@ function escapeInline(value) {
         // eslint-disable-next-line no-control-regex
         .replace(/[\u0000-\u001f\u007f\s]+/g, ' ')
         .replace(/[&<>]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[char])
-        .replace(/[\\`*_[\]~|]/g, '\\$&')
-        .replace(/^([#+\-=])/, '\\$1')
+        .replace(/[\\`*_[\]~|#]/g, '\\$&')
+        .replace(/^([+\-=])/, '\\$1')
         .replace(/^(\d+)([.)])/, '$1\\$2');
 }
 

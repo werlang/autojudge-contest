@@ -321,7 +321,7 @@ describe('inline escaping of server-provided text', () => {
             expect(page).not.toContain('<img');
             expect(page).not.toMatch(/^## Fake/m);
             expect(page).not.toContain('[win](');
-            expect(page).toContain('Evil &lt;img src="https://evil.example/t.png"&gt; ## Fake \\[win\\](https://phish.example)');
+            expect(page).toContain('Evil &lt;img src="https://evil.example/t.png"&gt; \\#\\# Fake \\[win\\](https://phish.example)');
         }
         expect(renderTeamStandingDetails(team, { contest }).split('\n')[0]).toMatch(/^# Evil &lt;img/);
     });
@@ -329,7 +329,7 @@ describe('inline escaping of server-provided text', () => {
     it('escapes problem titles, contest names, filenames, languages and verdicts', () => {
         const problem = { publicId: 'pevil0000000', order: 1, title: '# *bold* <b>x</b>\n- item' };
         const page = renderProblemPage(problem, { problems: [problem] });
-        expect(page.split('\n')[0]).toBe('# A. # \\*bold\\* &lt;b&gt;x&lt;/b&gt; - item');
+        expect(page.split('\n')[0]).toBe('# A. \\# \\*bold\\* &lt;b&gt;x&lt;/b&gt; - item');
 
         const submission = {
             id: 7,
@@ -340,22 +340,32 @@ describe('inline escaping of server-provided text', () => {
         };
         const details = renderSubmissionDetails(submission, { problems: [problem] });
         expect(details).not.toContain('<script>');
-        expect(details).toContain('- **File:** &lt;script&gt;alert(1)&lt;/script&gt; # h.cpp');
+        expect(details).toContain('- **File:** &lt;script&gt;alert(1)&lt;/script&gt; \\# h.cpp');
         expect(details).toContain('- **Language:** \\[x\\](https://phish.example)');
-        expect(details).toContain('- **Problem:** A. # \\*bold\\*');
-        expect(details).toContain('**Wrong Answer** for A. # \\*bold\\*');
+        expect(details).toContain('- **Problem:** A. \\# \\*bold\\*');
+        expect(details).toContain('**Wrong Answer** for A. \\# \\*bold\\*');
 
         const overview = renderContestDashboard({ name: '<i>Cup</i>\n# x', startTime: null });
-        expect(overview.split('\n')[0]).toBe('# Contest Overview · &lt;i&gt;Cup&lt;/i&gt; # x');
+        expect(overview.split('\n')[0]).toBe('# Contest Overview · &lt;i&gt;Cup&lt;/i&gt; \\# x');
 
         const solved = { ...CONTEST, problems: [problem], teams: [{ publicId: 't1', name: 'T', solvedProblemIds: ['pevil0000000'] }] };
-        expect(renderTeamStandingDetails(solved.teams[0], { contest: solved })).toContain('- A. # \\*bold\\*');
+        expect(renderTeamStandingDetails(solved.teams[0], { contest: solved })).toContain('- A. \\# \\*bold\\*');
     });
 
     it('escapes a leading block marker and keeps plain names untouched', () => {
         expect(renderTeamStandingDetails({ name: '- 1. x' }, null).split('\n')[0]).toBe('# \\- 1. x');
         expect(renderTeamStandingDetails({ name: '1. first' }, null).split('\n')[0]).toBe('# 1\\. first');
         expect(renderTeamStandingDetails({ name: 'Team Bits 42' }, null).split('\n')[0]).toBe('# Team Bits 42');
+    });
+
+    it('keeps a trailing # in a team or contest name inside the heading', () => {
+        const team = { publicId: 'twearehash000', name: 'We Are #', score: 0, solvedProblemIds: [] };
+        const contest = { ...CONTEST, name: 'We Are #', teams: [team] };
+
+        // An unescaped trailing `#` would close the ATX heading and vanish from the page.
+        expect(renderTeamStandingDetails(team, { contest }).split('\n')[0]).toBe('# We Are \\#');
+        expect(renderContestDashboard(contest, { team }).split('\n')[0]).toBe('# Contest Overview · We Are \\#');
+        expect(renderContestDashboard(contest, { team })).toContain('## We Are \\#\n');
     });
 
     it('leaves problem statements as the Markdown the author wrote', () => {
