@@ -255,7 +255,7 @@
       "editor/title": [
         {
           "command": "autojudgeContest.submitActiveFile",
-          "when": "autojudgeContest.state == loggedIn && resourceScheme == file && resourceExtname =~ /^\\.(c|cpp|java|js|php|py)$/",
+          "when": "autojudgeContest.state == loggedIn && resourceScheme == file && resourceExtname =~ /^\\.(c|cpp|java|js|php|py)$/i",
           "group": "navigation@100"
         }
       ],
