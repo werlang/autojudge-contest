@@ -16,8 +16,17 @@ export class ContestSubmissionWorkspace {
      *   `isDirty` is true when the editor buffer has unsaved changes, so callers can offer to save first.
      */
     async readActiveSourceFile() {
-        const document = this.requireActiveSourceDocument();
+        return this.readSourceDocument(this.requireActiveSourceDocument());
+    }
 
+    /**
+     * Read a given source document, e.g. the one just saved, whatever editor is
+     * active now. An empty file is sent as a single space, which the judge
+     * accepts where it refuses an empty body.
+     * @param {import('vscode').TextDocument} document
+     * @returns {{ filename: string, sourceCode: string, uri: import('vscode').Uri, document: import('vscode').TextDocument, isDirty: boolean }}
+     */
+    readSourceDocument(document) {
         return {
             filename: path.basename(document.fileName),
             sourceCode: document.getText() || ' ',

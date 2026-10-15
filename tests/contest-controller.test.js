@@ -205,6 +205,13 @@ describe('contest controller', () => {
                 uri: fileUri('/workspace/main.cpp'),
                 isDirty: false,
             })),
+            readSourceDocument: vi.fn((document) => ({
+                filename: 'main.cpp',
+                sourceCode: document.getText() || ' ',
+                uri: fileUri('/workspace/main.cpp'),
+                document,
+                isDirty: false,
+            })),
         };
         teamsStandingsProvider = { setSnapshot: vi.fn() };
         treeProvider = {
@@ -944,14 +951,17 @@ describe('contest controller', () => {
 
         it('saves a dirty file after the Save and Submit prompt and submits the saved content', async () => {
             const snapshot = createSnapshot();
-            const document = { save: vi.fn(async () => true) };
-            submissionWorkspace.readActiveSourceFile
-                .mockResolvedValueOnce({
-                    filename: 'main.cpp', sourceCode: 'old content', uri: fileUri('/workspace/main.cpp'), document, isDirty: true,
-                })
-                .mockResolvedValue({
-                    filename: 'main.cpp', sourceCode: 'saved content', uri: fileUri('/workspace/main.cpp'), document, isDirty: false,
-                });
+            let text = 'old content';
+            const document = {
+                getText: () => text,
+                save: vi.fn(async () => {
+                    text = 'saved content';
+                    return true;
+                }),
+            };
+            submissionWorkspace.readActiveSourceFile.mockResolvedValue({
+                filename: 'main.cpp', sourceCode: 'old content', uri: fileUri('/workspace/main.cpp'), document, isDirty: true,
+            });
             showWarningMessage.mockResolvedValue('Save and Submit');
             sessionApi.submitSolution.mockResolvedValue(pending());
 
@@ -971,14 +981,17 @@ describe('contest controller', () => {
 
         it('submits the re-read file after a save instead of falling back to the pre-save text', async () => {
             const snapshot = createSnapshot();
-            const document = { save: vi.fn(async () => true) };
-            submissionWorkspace.readActiveSourceFile
-                .mockResolvedValueOnce({
-                    filename: 'main.cpp', sourceCode: 'stale text', uri: fileUri('/workspace/main.cpp'), document, isDirty: true,
-                })
-                .mockResolvedValue({
-                    filename: 'main.cpp', sourceCode: ' ', uri: fileUri('/workspace/main.cpp'), document, isDirty: false,
-                });
+            let text = 'stale text';
+            const document = {
+                getText: () => text,
+                save: vi.fn(async () => {
+                    text = '';
+                    return true;
+                }),
+            };
+            submissionWorkspace.readActiveSourceFile.mockResolvedValue({
+                filename: 'main.cpp', sourceCode: 'stale text', uri: fileUri('/workspace/main.cpp'), document, isDirty: true,
+            });
             showWarningMessage.mockResolvedValue('Save and Submit');
             sessionApi.submitSolution.mockResolvedValue(pending());
 
@@ -1001,6 +1014,28 @@ describe('contest controller', () => {
             expect(showErrorMessage).toHaveBeenCalledWith('The upload did not finish in time. Check Contest Explorer before submitting again.');
             expect(sessionApi.restoreContestSession).toHaveBeenCalledTimes(1);
             expect(withExplorerProgress).not.toHaveBeenCalled();
+        });
+
+        it('submits the saved document even if the user switched editors during a slow save', async () => {
+            const snapshot = createSnapshot();
+            const document = { getText: () => 'saved main', save: vi.fn(async () => true) };
+            submissionWorkspace.readActiveSourceFile
+                .mockResolvedValueOnce({
+                    filename: 'main.cpp', sourceCode: 'unsaved main', uri: fileUri('/workspace/main.cpp'), document, isDirty: true,
+                })
+                .mockResolvedValue({
+                    filename: 'other.py', sourceCode: 'print(1)', uri: fileUri('/workspace/other.py'), isDirty: false,
+                });
+            showWarningMessage.mockResolvedValue('Save and Submit');
+            sessionApi.submitSolution.mockResolvedValue(pending());
+
+            await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
+
+            expect(submissionWorkspace.readSourceDocument).toHaveBeenCalledWith(document);
+            expect(sessionApi.submitSolution).toHaveBeenCalledWith(expect.objectContaining({
+                code: Buffer.from('saved main', 'utf-8').toString('base64'),
+                filename: 'main.cpp',
+            }));
         });
 
         it('passes the resolved poll interval through unchanged', async () => {

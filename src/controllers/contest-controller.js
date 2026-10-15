@@ -99,7 +99,7 @@ export function logToChannel(channel, level, message) {
  * @param {(items: object[], options: object) => Promise<object | undefined> | object | undefined} [options.showQuickPick]
  * @param {<T>(task: () => Promise<T>) => Promise<T>} [options.withExplorerProgress] shows progress on the Contest Explorer view during a manual refresh
  * @param {<T>(title: string, task: (cancellation: object) => Promise<T>) => Promise<T>} options.withCancellableProgress shows a cancellable notification and passes the cancellation token to the task
- * @param {{ exportPublicCases: Function, readActiveSourceFile: Function, pickExportDirectory: Function, findExistingCaseFiles: Function }} options.submissionWorkspace
+ * @param {{ exportPublicCases: Function, readActiveSourceFile: Function, readSourceDocument: Function, pickExportDirectory: Function, findExistingCaseFiles: Function }} options.submissionWorkspace
  * @param {{ setSnapshot: (snapshot: object | null) => void }} options.teamsStandingsProvider
  * @param {{ setSnapshot: (snapshot: object | null) => void, getSnapshot?: () => object | null }} options.treeProvider
  * @param {{ update: (snapshot: object | null) => void, setPendingCount: (count: number) => void } | null} [options.statusBar]
@@ -1254,9 +1254,10 @@ export function createContestController({
                     return null;
                 }
 
-                // Re-read after a save, which may have run format-on-save.
+                // Re-read the saved document (format-on-save may have changed
+                // it), not the active editor: the user may have switched files.
                 const { sourceCode } = source.isDirty
-                    ? await submissionWorkspace.readActiveSourceFile()
+                    ? submissionWorkspace.readSourceDocument(source.document)
                     : source;
                 const submission = await sessionApi.submitSolution({
                     baseUrl: resolveBaseUrl(),

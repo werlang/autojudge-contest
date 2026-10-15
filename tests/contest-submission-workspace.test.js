@@ -142,6 +142,24 @@ describe('contest submission workspace', () => {
         });
     });
 
+    describe('readSourceDocument', () => {
+        it('reads the given document even when another editor is active', () => {
+            const saved = createActiveEditor('/workspace/src/main.cpp').document;
+            vscodeState.setActiveTextEditor(createActiveEditor('/workspace/src/other.py'));
+
+            const result = new ContestSubmissionWorkspace().readSourceDocument(saved);
+
+            expect(result.filename).toBe('main.cpp');
+            expect(result.document).toBe(saved);
+        });
+
+        it('sends an empty document as a single space', () => {
+            const empty = { ...createActiveEditor('/workspace/src/main.cpp').document, getText: () => '' };
+
+            expect(new ContestSubmissionWorkspace().readSourceDocument(empty).sourceCode).toBe(' ');
+        });
+    });
+
     describe('getActiveFileDirectory', () => {
         it('returns the directory of any on-disk active document', () => {
             vscodeState.setActiveTextEditor(createActiveEditor('/workspace/docs/statement.md'));
