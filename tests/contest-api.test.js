@@ -64,6 +64,38 @@ describe('request timeout', () => {
     });
 });
 
+describe('response body read', () => {
+    it('rejects with the timeout error when the timeout fires while the body is still being read', async () => {
+        const timeout = new AbortController();
+        vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal);
+        fetchMock.mockImplementation(async (_url, { signal }) => ({
+            ok: true,
+            status: 200,
+            json: () => new Promise((_resolve, reject) => {
+                signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+            }),
+        }));
+
+        const request = getSubmissions({ baseUrl: 'https://api.autojudge.test', token: 't' });
+        await Promise.resolve();
+        timeout.abort();
+
+        await expect(request).rejects.toThrow('The AutoJudge server did not respond in time.');
+    });
+
+    it('still treats an unparsable body as an empty payload', async () => {
+        fetchMock.mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => {
+                throw new SyntaxError('Unexpected end of JSON input');
+            },
+        });
+
+        await expect(getSubmissions({ baseUrl: 'https://api.autojudge.test', token: 't' })).resolves.toEqual({});
+    });
+});
+
 describe('redeemHandoffCode', () => {
     it('posts the code as JSON to the redeem route without an Authorization header', async () => {
         fetchMock.mockResolvedValue(jsonResponse({ token: 'team-jwt-token' }));

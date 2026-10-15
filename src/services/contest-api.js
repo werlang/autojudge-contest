@@ -215,30 +215,23 @@ function buildAuthHeaders(token) {
 
 /**
  * Combine the request timeout with an optional caller signal (logout, poll
- * stop). Falls back to the caller signal alone when the runtime lacks
- * `AbortSignal.timeout`/`AbortSignal.any`.
+ * stop). VS Code ^1.90 runs on Node >= 20.9, which has both
+ * `AbortSignal.timeout` and `AbortSignal.any`.
  * @param {AbortSignal | undefined} signal
- * @returns {{ signal: AbortSignal | undefined, timeoutSignal: AbortSignal | null }}
+ * @returns {{ signal: AbortSignal, timeoutSignal: AbortSignal }}
  */
 function withRequestTimeout(signal) {
-    if (typeof AbortSignal?.timeout !== 'function') {
-        return { signal, timeoutSignal: null };
-    }
-
     const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-    if (!signal) {
-        return { signal: timeoutSignal, timeoutSignal };
-    }
-
-    return typeof AbortSignal.any === 'function'
-        ? { signal: AbortSignal.any([signal, timeoutSignal]), timeoutSignal }
-        : { signal, timeoutSignal: null };
+    return {
+        signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
+        timeoutSignal,
+    };
 }
 
 /**
  * Execute a JSON API request and preserve the backend message on failure. A
- * request that runs past REQUEST_TIMEOUT_MS rejects with a clear error; a
- * caller abort rejects with the fetch AbortError unchanged.
+ * request (body read included) that runs past REQUEST_TIMEOUT_MS rejects with
+ * a clear error; a caller abort rejects with the fetch AbortError unchanged.
  * @param {{ baseUrl: string, endpoint: string, headers?: Record<string, string>, method: string, signal?: AbortSignal, body?: unknown }} options
  * @returns {Promise<any>}
  */
@@ -255,10 +248,18 @@ async function requestJson({ baseUrl, endpoint, headers, method, signal, body })
             method,
             signal: timeout.signal,
         });
-        payload = await response.json().catch(() => ({}));
+        payload = await response.json().catch((error) => {
+            // An abort while reading the body (timeout, logout) must fail the
+            // request; only an unparsable body falls back to an empty payload.
+            if (timeout.signal.aborted) {
+                throw error;
+            }
+
+            return {};
+        });
     }
     catch (error) {
-        if (timeout.timeoutSignal?.aborted && !signal?.aborted) {
+        if (timeout.timeoutSignal.aborted && !signal?.aborted) {
             throw new Error(REQUEST_TIMEOUT_MESSAGE);
         }
 
