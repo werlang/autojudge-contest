@@ -20,7 +20,7 @@ The **AutoJudge Contest** extension allows competitive programming teams to focu
 ## ✨ Features
 
 - **🔐 Simple Team Authentication**
-  Log in through the AutoJudge website: VS Code opens your browser, you enter your team code and PIN (or confirm if you are already logged in there), and the browser sends you back to VS Code logged in. Both share the same team session, which stays valid for the whole contest and is restored when VS Code restarts. If the AutoJudge server cannot be reached, the views show an offline notice with a **Retry** link, and your session is kept.
+  Log in through the AutoJudge website: VS Code opens your browser, you enter your team code and PIN (or confirm if you are already logged in there), and the browser sends you back to VS Code logged in. Both share the same team session, which stays valid for the whole contest and is restored when VS Code restarts. If the AutoJudge server cannot be reached (or does not answer within 20 seconds), the views show an offline notice with a **Retry** link, and your session is kept.
 
 - **📖 Interactive Problem Browser**
   Problems are listed in letter order (**A.**, **B.**, …) with your solved state and attempt count. Open a problem to read its statement, with its public test cases, as clean, readable Markdown directly inside VS Code. No web browser required.
@@ -31,7 +31,7 @@ The **AutoJudge Contest** extension allows competitive programming teams to focu
   Export public testcase input/output pairs as numbered `.in` and `.out` files (`<problem>-testcase-01.in`) for easy local debugging and validation. Files go to the active file's folder, or to your only workspace folder, or to a folder you choose. Existing files are replaced only after you confirm.
 
 - **⚡ Instant Submission & Poll-to-Verdict**
-  Submit your active source code file from a problem's row, the editor title bar, or the Command Palette. Supports `.c`, `.cpp`, `.java`, `.js`, `.php`, and `.py`. Pick the problem (the one you last submitted this file to is listed first), confirm the submission, and watch it show as **Judging** until the verdict arrives in a notification with **View Details** and **Compare Output** actions. Submissions still being judged are checked automatically, including after a restart.
+  Submit your active source code file from a problem's row, the editor title bar, or the Command Palette. Supports `.c`, `.cpp`, `.java`, `.js`, `.php`, and `.py`. Pick the problem (the one you last submitted this file to is listed first), confirm the submission, and watch it show as **Judging** until the verdict arrives in a notification with **View Details** and **Compare Output** actions. A problem you have already solved is not submitted again, and a second submission is refused until the first one has been sent. Submissions still being judged are checked automatically, including after a restart: network errors only delay the next check, and a verdict still pending after 2 minutes is checked again 30 seconds later.
 
   ![Instant Submission](media/submissions-tree.png)
 
@@ -42,7 +42,7 @@ The **AutoJudge Contest** extension allows competitive programming teams to focu
   The contest header in the Contest Explorer shows the time left. The status bar shows the time left, your rank, and how many submissions are still being judged. Click either one to open the **Contest Overview** page.
 
 - **🗂️ Submission History Tracking**
-  Each problem lists its own submissions, newest first, with the verdict and how long ago each was made. Open a submission to see its verdict, time or penalty, judge hint, and expected versus received output. Submissions with output can be compared side by side.
+  Each problem lists its own submissions, newest first, with the verdict and how long ago each was made. Open a submission to see its verdict, time or penalty, judge hint, and expected versus received output. Submissions with both expected and received output can be compared side by side.
 
 ![Submission View](media/submissions-view.png)
 ---
@@ -58,7 +58,7 @@ Get ready for the contest in just a few quick steps:
 > Browser login works best with one VS Code window open. The browser's `vscode://` callback goes to whichever window VS Code routes it to, which may not be the window that started the login. If you have several windows open, close the others while you log in. A callback that reaches a window with no login in progress shows "No login in progress. Run Log In again."
 
 > [!NOTE]
-> Before the contest starts, the explorer shows **Contest has not started yet** and keeps your session. Refresh once the contest starts to load the problems.
+> Before the contest starts, the explorer shows **Contest has not started yet** and keeps your session. The problems load on their own once the contest starts: within about 15 seconds while the **Standings** view is visible (about a minute while it is hidden), so no manual Refresh is needed.
 3. **Explore Problems:** In the **Contest Explorer**, each problem shows its letter, title, and your progress. Hover over a problem and click the **book** icon (Open Problem Statement) to read its statement, which opens as a Markdown page. The problem's submissions are nested beneath it.
 4. **Generate Testcases:** Hover over a problem and click the **beaker** icon (Export Public Test Cases) to write its public `.in` and `.out` files. They go into the folder of the active file when one is open, otherwise into your only workspace folder, otherwise into a folder you choose.
 5. **Submit & Monitor:** Open your solution file and click the **cloud upload** icon (Submit Active File…) on a problem row, or on the same icon in the editor title bar. Confirm the submission. It appears under the problem with a **Judging** label, the status bar shows the pending count, and the verdict arrives as a notification. Click a submission row to view its details.
@@ -71,7 +71,7 @@ Hosting your own contest? AutoJudge is completely open source. You can self-host
 
 👉 [**@werlang/autojudge**](https://github.com/werlang/autojudge)
 
-To connect the extension to your self-hosted server, set `autojudgeContest.baseUrl` to your API address (defaults to `https://api.autojudge.io`) and `autojudgeContest.webUrl` to your website address, used for the browser login (defaults to `https://autojudge.io`). Both settings are read whenever they are used, so changes apply without reloading the window. Use `http://` or `https://` addresses: an invalid value shows an error with an **Open Settings** button when the extension tries to reach the server.
+To connect the extension to your self-hosted server, set `autojudgeContest.baseUrl` to your API address (defaults to `https://api.autojudge.io`) and `autojudgeContest.webUrl` to your website address, used for the browser login (defaults to `https://autojudge.io`). Both settings are read whenever they are used, so changes apply without reloading the window. Use `http://` or `https://` addresses: an invalid value shows an error with an **Open Settings** button as soon as the extension needs the server, including when you start **Log In** (before the browser opens).
 
 ---
 
@@ -84,7 +84,7 @@ Customize the extension's behavior via your VS Code Settings:
 | `autojudgeContest.baseUrl` | `string` | `"https://api.autojudge.io"` | Full base API URL of the AutoJudge server. Supports subpaths (e.g. `https://example.com/api`). |
 | `autojudgeContest.webUrl` | `string` | `"https://autojudge.io"` | Base URL of the AutoJudge website, opened for the browser login. |
 | `autojudgeContest.pollIntervalMs` | `number` | `5000` | The polling interval (in milliseconds) used when waiting for a submission verdict. (Min: `1000`) |
-| `autojudgeContest.confirmBeforeSubmit` | `boolean` | `true` | Ask for confirmation before submitting the active file, since a rejected submission adds a penalty. Unsaved files are always confirmed before they are saved and submitted. |
+| `autojudgeContest.confirmBeforeSubmit` | `boolean` | `true` | Ask for confirmation before submitting the active file, since a rejected attempt adds penalty time if you solve that problem later. Unsaved files are always confirmed before they are saved and submitted. |
 
 *Note: The Standings view refreshes every 15 seconds while it is visible and every 60 seconds while it is hidden; these intervals are fixed. `autojudgeContest.baseUrl` and `autojudgeContest.webUrl` are application-scoped: set them in your user settings, since a workspace setting cannot change them.*
 
