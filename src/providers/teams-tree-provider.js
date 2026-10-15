@@ -4,6 +4,9 @@ import { sameTeam, resolveRouteId } from '../utils/public-id.js';
 import { countSolvedProblems, resolveStandingTeams } from '../utils/standings.js';
 import { formatMinutes } from '../utils/time-format.js';
 
+/** Longest team name (in characters, ellipsis included) shown in a row label. */
+export const MAX_TEAM_NAME_LENGTH = 24;
+
 /** Empty 16x16 SVG used as the placeholder icon of other teams' rows. */
 const BLANK_ICON_URI = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"></svg>')}`;
 
@@ -112,9 +115,11 @@ function buildFrozenScoreboardItem() {
 }
 
 /**
- * Build one clickable standings row. The logged-in team gets a star icon and a
- * `(you)` marker; every other row gets an invisible placeholder icon so all
- * labels start at the same column.
+ * Build one clickable standings row: `4. Team name` with `2 solved · 85 min`
+ * (`0 solved` alone for teams without a solve). Long names are capped so the
+ * stats stay visible in a narrow sidebar; the tooltip carries the full name.
+ * The logged-in team gets a star icon and a `(you)` marker; every other row
+ * gets an invisible placeholder icon so all labels start at the same column.
  * @param {object} team normalized standings team carrying `rank`
  * @param {object | undefined | null} currentTeam the logged-in team from the snapshot
  * @param {number | null} problemCount total contest problems, when known
@@ -123,20 +128,22 @@ function buildFrozenScoreboardItem() {
 function buildStandingTeamItem(team, currentTeam, problemCount) {
     const solvedCount = countSolvedProblems(team);
     const isCurrentTeam = sameTeam(team, currentTeam);
+    const teamName = team.name?.toString().trim() || 'Unnamed team';
     const timeLabel = formatMinutes(team.score);
     const solvedLabel = problemCount == null
         ? `${solvedCount} solved`
         : `${solvedCount} of ${problemCount} problems solved`;
-    const summary = `${solvedCount} solved \u00b7 ${timeLabel}`;
+    // Total time is meaningless without a solve, so a zero row stays short.
+    const summary = solvedCount ? `${solvedCount} solved \u00b7 ${timeLabel}` : '0 solved';
 
     const publicId = resolveRouteId(team);
 
     return {
         // Without a stable public id the row gets no id: VS Code throws on duplicates.
         id: publicId ? `team:${publicId}` : undefined,
-        label: `${team.rank}. ${team.name}`,
+        label: `${team.rank}. ${truncateTeamName(teamName)}`,
         description: isCurrentTeam ? `${summary} (you)` : summary,
-        tooltip: `Rank ${team.rank} \u00b7 ${solvedLabel} \u00b7 ${timeLabel} total time${isCurrentTeam ? ' \u00b7 your team' : ''}`,
+        tooltip: `${teamName}\nRank ${team.rank} \u00b7 ${solvedLabel} \u00b7 ${timeLabel} total time${isCurrentTeam ? ' \u00b7 your team' : ''}`,
         iconPath: isCurrentTeam
             ? new vscode.ThemeIcon('star-full', new vscode.ThemeColor('charts.yellow'))
             // VS Code indents icon-less rows differently from the starred row, so
@@ -151,4 +158,19 @@ function buildStandingTeamItem(team, currentTeam, problemCount) {
         },
         team,
     };
+}
+
+/**
+ * Cap a team name at {@link MAX_TEAM_NAME_LENGTH} characters, ending it with
+ * an ellipsis when cut. Counts code points so emoji are never split in half.
+ * @param {string} name
+ * @returns {string}
+ */
+export function truncateTeamName(name) {
+    const chars = Array.from(name);
+    if (chars.length <= MAX_TEAM_NAME_LENGTH) {
+        return name;
+    }
+
+    return `${chars.slice(0, MAX_TEAM_NAME_LENGTH - 1).join('').trimEnd()}\u2026`;
 }

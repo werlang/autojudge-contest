@@ -18,7 +18,7 @@ vi.mock('vscode', () => ({
 }), { virtual: true });
 
 import { COMMANDS, TREE_CONTEXT } from '../src/constants.js';
-import { TeamsStandingsProvider } from '../src/providers/teams-tree-provider.js';
+import { MAX_TEAM_NAME_LENGTH, TeamsStandingsProvider, truncateTeamName } from '../src/providers/teams-tree-provider.js';
 
 describe('teams standings provider', () => {
     it('renders teams ranked by solved count then lower total time, with the logged-in team highlighted from solvedProblemIds', () => {
@@ -71,7 +71,7 @@ describe('teams standings provider', () => {
                 description: '1 solved \u00b7 3.3 min (you)',
                 id: 'team:tbits91cd0000',
                 label: '2. Bits',
-                tooltip: 'Rank 2 \u00b7 1 of 2 problems solved \u00b7 3.3 min total time \u00b7 your team',
+                tooltip: 'Bits\nRank 2 \u00b7 1 of 2 problems solved \u00b7 3.3 min total time \u00b7 your team',
             }),
         ]);
         // Other teams get an invisible placeholder icon instead of a repeated person icon.
@@ -107,7 +107,7 @@ describe('teams standings provider', () => {
         });
 
         expect(provider.getChildren()).toEqual([
-            expect.objectContaining({ description: '0 solved \u00b7 3.3 min', label: '1. Bits' }),
+            expect.objectContaining({ description: '0 solved', label: '1. Bits' }),
         ]);
     });
 
@@ -190,5 +190,35 @@ describe('teams standings provider', () => {
         });
 
         expect(provider.getChildren().map(row => row.label)).toEqual(['1. Alpha', '1. Beta', '3. Gamma']);
+    });
+
+    it('caps long team names in the label so the stats stay visible, keeping the full name in the tooltip', () => {
+        const longName = 'Segmentation Fault (core dumped)';
+        const provider = new TeamsStandingsProvider();
+
+        provider.setSnapshot({
+            contest: {
+                teams: [
+                    { publicId: 'ta', name: longName, score: 0 },
+                    { publicId: 'tb', name: 'Exactly twenty-four char', score: 0 },
+                ],
+            },
+        });
+
+        const rows = provider.getChildren();
+        const long = rows.find(row => row.id === 'team:ta');
+        const exact = rows.find(row => row.id === 'team:tb');
+        expect(long.label).toBe('1. Segmentation Fault (cor\u2026');
+        expect(long.description).toBe('0 solved');
+        expect(long.tooltip.split('\n')[0]).toBe(longName);
+        expect(exact.label).toBe('1. Exactly twenty-four char');
+    });
+
+    it('truncates by characters, trims before the ellipsis, and never exceeds the cap', () => {
+        expect(MAX_TEAM_NAME_LENGTH).toBe(24);
+        expect(truncateTeamName('Mineração nas profundezas')).toBe('Mineração nas profundez\u2026');
+        expect(truncateTeamName('Team with a space right here ok')).toBe('Team with a space right\u2026');
+        expect(Array.from(truncateTeamName('\u{1F680}'.repeat(30)))).toHaveLength(MAX_TEAM_NAME_LENGTH);
+        expect(truncateTeamName('Bits')).toBe('Bits');
     });
 });
