@@ -23,6 +23,8 @@ import { extractPublicCases } from '../workspace/contest-public-cases.js';
 
 const MINUTE_MS = 60 * 1000;
 const MAX_FILE_NAME_LENGTH = 80;
+// Windows device names are reserved with or without an extension (`nul.md` too).
+const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 const CONTEST_PHASE_LABELS = {
     notStarted: 'Not started',
     running: 'Running',
@@ -314,7 +316,8 @@ export function getContestPageName(contest) {
 /**
  * Make a page name safe as a file name (it becomes the preview tab title):
  * strips `/ \ : * ? " < > |` and control characters, collapses whitespace,
- * trims trailing dots, and caps the length at 80 characters.
+ * trims trailing dots, caps the length at 80 characters, and suffixes Windows
+ * reserved device names (`CON`, `NUL`, `COM1`, ...) with `_`.
  * @param {unknown} name
  * @param {string} [fallback='page']
  * @returns {string}
@@ -329,7 +332,18 @@ export function toSafeFileName(name, fallback = 'page') {
         .replace(/[.\s]+$/g, '')
         .trim();
 
-    return cleaned || fallback;
+    return avoidReservedName(cleaned) || fallback;
+}
+
+/**
+ * Append `_` to a name whose part before the first dot is a Windows reserved
+ * device name, so the file can be created on every platform.
+ * @param {string} name
+ * @returns {string}
+ */
+function avoidReservedName(name) {
+    const base = name.split('.')[0].trimEnd();
+    return WINDOWS_RESERVED_NAME.test(base) ? `${base}_${name.slice(base.length)}` : name;
 }
 
 /**

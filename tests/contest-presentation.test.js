@@ -266,6 +266,20 @@ describe('page names', () => {
         expect(toSafeFileName('///')).toBe('page');
         expect(toSafeFileName(undefined, 'problem')).toBe('problem');
     });
+
+    it('never produces a Windows reserved device name', () => {
+        expect(toSafeFileName('nul')).toBe('nul_');
+        expect(toSafeFileName('CON')).toBe('CON_');
+        expect(toSafeFileName('Com1')).toBe('Com1_');
+        expect(toSafeFileName('lpt9')).toBe('lpt9_');
+        expect(toSafeFileName('aux.txt')).toBe('aux_.txt');
+        expect(toSafeFileName('PRN...')).toBe('PRN_');
+        expect(toSafeFileName('nul ')).toBe('nul_');
+        expect(toSafeFileName('com0')).toBe('com0');
+        expect(toSafeFileName('console')).toBe('console');
+        expect(toSafeFileName('com10')).toBe('com10');
+        expect(toSafeFileName('nul?', 'x')).toBe('nul_');
+    });
 });
 
 describe('kept helpers', () => {
