@@ -106,7 +106,8 @@ describe('renderSubmissionDetails', () => {
         const page = renderSubmissionDetails(submission, { problems: PROBLEMS });
 
         expect(page.startsWith('# Submission 852\n')).toBe(true);
-        expect(page).toContain('**Accepted** for A. A + B.');
+        // The fields list carries verdict and problem, so no summary sentence repeats them.
+        expect(page).not.toContain('**Accepted** for');
         expect(page).toContain('- **Verdict:** Accepted');
         expect(page).toContain('- **Problem:** A. A + B');
         expect(page).toContain(`- **Submitted:** ${formatLocalDateTime(submission.submittedAt)} (`);
@@ -118,7 +119,7 @@ describe('renderSubmissionDetails', () => {
         expect(page).not.toMatch(EMOJI);
     });
 
-    it('labels a rejected score as Penalty and shows hint plus expected vs received with the compare tip', () => {
+    it('labels a rejected score as Penalty and shows hint plus raw expected and received output', () => {
         const page = renderSubmissionDetails({
             id: 9,
             problem: { publicId: 'pbbbbbbbbbbbb', title: 'Binary Search' },
@@ -127,33 +128,72 @@ describe('renderSubmissionDetails', () => {
             hint: { message: 'Check the edges.', expected: '3\n', received: '```4' },
         }, { problems: PROBLEMS });
 
-        expect(page).toContain('**Wrong Answer** for B. Binary Search.');
+        expect(page).not.toContain('**Wrong Answer** for');
+        expect(page).toContain('- **Verdict:** Wrong Answer');
+        expect(page).toContain('- **Problem:** B. Binary Search');
         expect(page).toContain('- **Penalty:** 20 min');
         expect(page).not.toContain('- **Time:**');
         expect(page).toContain('## Hint\n\n```text\nCheck the edges.\n```');
         expect(page).toContain('### Expected\n\n```text\n3\n```');
         // A longer fence keeps judge output with backticks inside the block.
         expect(page).toContain('### Received\n\n````text\n```4\n````');
-        expect(page).toContain('Compare Expected and Received Output');
+        expect(page).not.toContain('Compare Expected and Received Output');
+        expect(page).not.toContain('right-click');
+    });
+
+    it('shows an inline line diff before the raw outputs', () => {
+        const page = renderSubmissionDetails({
+            id: 10,
+            status: 'WRONG_ANSWER',
+            hint: { expected: '42\n17\n8\n', received: '42\r\n17\r\n9\r\n' },
+        });
+
+        expect(page).toContain('## Output difference');
+        expect(page).toContain('`-` expected, `+` your output');
+        expect(page).toContain('```diff\n 42\n 17\n-8\n+9\n```');
+        expect(page.indexOf('## Output difference')).toBeLessThan(page.indexOf('### Expected'));
+        expect(page).toContain('### Expected\n\n```text\n42\n17\n8\n```');
+    });
+
+    it('diffs added and missing lines and fences backticks in the diff', () => {
+        const page = renderSubmissionDetails({
+            id: 11,
+            status: 'WRONG_ANSWER',
+            hint: { expected: 'a\nb\n```', received: 'b\nc\n```' },
+        });
+
+        expect(page).toContain('````diff\n-a\n b\n+c\n ```\n````');
+    });
+
+    it('caps the diff and notes the truncation', () => {
+        const long = Array.from({ length: 250 }, (_, index) => `l${index}`).join('\n');
+        const page = renderSubmissionDetails({ id: 12, status: 'WRONG_ANSWER', hint: { expected: long, received: `${long}\nextra` } });
+        const start = page.indexOf('```diff');
+        const diff = page.slice(start, page.indexOf('\n```\n', start));
+
+        expect(page).toContain('Only the first 200 lines of each output are compared.');
+        expect(diff.split('\n')).toHaveLength(201);
+        expect(diff).not.toContain('l200');
     });
 
     it('omits missing fields instead of rendering undefined', () => {
         const page = renderSubmissionDetails({ id: 3, status: 'PENDING' });
 
-        expect(page).toContain('**Pending** — still being judged.');
+        expect(page).toContain('Still being judged.');
         expect(page).not.toContain('undefined');
         expect(page).not.toContain('**Problem:**');
         expect(page).not.toContain('**Submitted:**');
         expect(page).not.toContain('**Penalty:**');
-        expect(page).not.toContain('Compare Expected and Received Output');
+        expect(page).not.toContain('## Output difference');
     });
 
-    it('skips the compare tip when only one side of the output exists', () => {
+    it('shows just the one output block and no diff when only one side exists', () => {
         const page = renderSubmissionDetails({ id: 4, status: 'RUNTIME_ERROR', hint: { received: 'boom' } });
 
         expect(page).toContain('### Received');
         expect(page).not.toContain('### Expected');
-        expect(page).not.toContain('Compare Expected and Received Output');
+        expect(page).not.toContain('## Output difference');
+        expect(page).not.toContain('```diff');
     });
 });
 
@@ -350,7 +390,6 @@ describe('inline escaping of server-provided text', () => {
         expect(details).toContain('- **File:** &lt;script&gt;alert(1)&lt;/script&gt; \\# h.cpp');
         expect(details).toContain('- **Language:** \\[x\\](https://phish.example)');
         expect(details).toContain('- **Problem:** A. \\# \\*bold\\*');
-        expect(details).toContain('**Wrong Answer** for A. \\# \\*bold\\*');
 
         const overview = renderContestDashboard({ name: '<i>Cup</i>\n# x', startTime: null });
         expect(overview.split('\n')[0]).toBe('# Contest Overview · &lt;i&gt;Cup&lt;/i&gt; \\# x');

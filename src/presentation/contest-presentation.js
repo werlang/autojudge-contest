@@ -1,4 +1,4 @@
-import { hasComparableOutput, isPassedSubmission, isPendingSubmission } from '../utils/submission-status.js';
+import { isPassedSubmission, isPendingSubmission } from '../utils/submission-status.js';
 import { countSolvedProblems, findTeamStanding, normalizeStandingScore, resolveStandingTeams } from '../utils/standings.js';
 import { resolveRouteId, sameEntity } from '../utils/public-id.js';
 import { formatDuration, formatLocalDateTime, formatMinutes, formatRelativeTime } from '../utils/time-format.js';
@@ -29,6 +29,8 @@ import { extractPublicCases } from '../workspace/contest-public-cases.js';
 
 const MINUTE_MS = 60 * 1000;
 const MAX_FILE_NAME_LENGTH = 80;
+// Longest output (in lines) the inline diff compares, keeping the LCS table small.
+const MAX_DIFF_LINES = 200;
 // Windows device names are reserved with or without an extension (`nul.md` too).
 const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 const CONTEST_PHASE_LABELS = {
@@ -88,7 +90,9 @@ export function renderProblemPage(problem, { problems = [], submissions = [] } =
 
 /**
  * Render one submission: verdict, problem, local submit time, time or penalty,
- * file details, judge hint, and expected versus received output.
+ * file details, judge hint, an inline line diff of expected versus received
+ * output, and the raw outputs. The fields list already carries verdict and
+ * problem, so a summary sentence appears only while the submission is pending.
  * @param {object} submission
  * @param {{ problems?: object[] }} [options]
  * @param {object[]} [options.problems] all contest problems, used for the letter
@@ -99,12 +103,10 @@ export function renderSubmissionDetails(submission, { problems = [] } = {}) {
     const problemLabel = escapeInline(formatSubmissionProblemLabel(submission?.problem, problems));
     const relative = formatRelativeTime(submission?.submittedAt);
 
-    const lines = [
-        `# ${escapeInline(getSubmissionHeading(submission))}`,
-        '',
-        describeSubmission(submission, verdict, problemLabel),
-        '',
-    ];
+    const lines = [`# ${escapeInline(getSubmissionHeading(submission))}`, ''];
+    if (isPendingSubmission(submission?.status)) {
+        lines.push('*Still being judged.*', '');
+    }
 
     const submittedAt = submission?.submittedAt
         ? `${formatLocalDateTime(submission.submittedAt)}${relative ? ` (${relative})` : ''}`
@@ -127,16 +129,18 @@ export function renderSubmissionDetails(submission, { problems = [] } = {}) {
 
     const hasExpected = hint.expected != null;
     const hasReceived = hint.received != null;
+    const expected = hasExpected ? normalizeText(hint.expected) : '';
+    const received = hasReceived ? normalizeText(hint.received) : '';
+    if (hasExpected && hasReceived) {
+        lines.push('', ...renderOutputDiff(expected, received));
+    }
     if (hasExpected || hasReceived) {
-        lines.push('', '## Expected vs received output');
-        if (hasComparableOutput(submission)) {
-            lines.push('', 'For a side-by-side diff, right-click the submission in Contest Explorer and choose **Compare Expected and Received Output**.');
-        }
+        lines.push('', '## Raw output');
         if (hasExpected) {
-            lines.push('', '### Expected', '', fence(String(hint.expected).trimEnd()));
+            lines.push('', '### Expected', '', fence(expected));
         }
         if (hasReceived) {
-            lines.push('', '### Received', '', fence(String(hint.received).trimEnd()));
+            lines.push('', '### Received', '', fence(received));
         }
     }
 
@@ -370,21 +374,6 @@ function describeProblemProgress(problem, submissions) {
 }
 
 /**
- * Write the one-line submission summary sentence.
- * @param {object} submission
- * @param {string} verdict
- * @param {string} problemLabel
- * @returns {string}
- */
-function describeSubmission(submission, verdict, problemLabel) {
-    const target = problemLabel ? ` for ${problemLabel}` : '';
-    if (isPendingSubmission(submission?.status)) {
-        return `**${verdict}**${target} — still being judged.`;
-    }
-    return `**${verdict}**${target}.`;
-}
-
-/**
  * Write the one-line contest phase summary sentence.
  * @param {ReturnType<typeof getContestTiming>} timing
  * @returns {string}
@@ -506,11 +495,11 @@ function buildPublicCases(problem) {
             '',
             '**Input**',
             '',
-            fence(normalizeOutput(testCase.input)),
+            fence(normalizeText(testCase.input)),
             '',
             '**Output**',
             '',
-            fence(normalizeOutput(testCase.output)),
+            fence(normalizeText(testCase.output)),
         ]),
     ].join('\n');
 }
@@ -521,8 +510,67 @@ function buildPublicCases(problem) {
  * @param {unknown} value
  * @returns {string}
  */
-function normalizeOutput(value) {
+function normalizeText(value) {
     return String(value ?? '').replace(/\r\n?/g, '\n').replace(/\n+$/, '');
+}
+
+/**
+ * Render the `## Output difference` section: a legend and a `diff` fence.
+ * @param {string} expected
+ * @param {string} received
+ * @returns {string[]}
+ */
+function renderOutputDiff(expected, received) {
+    const expectedLines = expected.split('\n');
+    const receivedLines = received.split('\n');
+    const truncated = expectedLines.length > MAX_DIFF_LINES || receivedLines.length > MAX_DIFF_LINES;
+    const diff = diffLines(expectedLines.slice(0, MAX_DIFF_LINES), receivedLines.slice(0, MAX_DIFF_LINES));
+
+    return [
+        '## Output difference',
+        '',
+        '`-` expected, `+` your output',
+        ...(truncated ? ['', `*Only the first ${MAX_DIFF_LINES} lines of each output are compared.*`] : []),
+        '',
+        fence(diff.join('\n'), 'diff'),
+    ];
+}
+
+/**
+ * Line diff from a longest-common-subsequence table: shared lines get a leading
+ * space, expected-only lines `-`, received-only lines `+` (removals first).
+ * @param {string[]} expected
+ * @param {string[]} received
+ * @returns {string[]}
+ */
+function diffLines(expected, received) {
+    // common[i][j] = length of the LCS of expected[i..] and received[j..].
+    const common = Array.from({ length: expected.length + 1 }, () => new Array(received.length + 1).fill(0));
+    for (let i = expected.length - 1; i >= 0; i -= 1) {
+        for (let j = received.length - 1; j >= 0; j -= 1) {
+            common[i][j] = expected[i] === received[j]
+                ? common[i + 1][j + 1] + 1
+                : Math.max(common[i + 1][j], common[i][j + 1]);
+        }
+    }
+
+    const diff = [];
+    let i = 0;
+    let j = 0;
+    while (i < expected.length || j < received.length) {
+        if (i < expected.length && j < received.length && expected[i] === received[j]) {
+            diff.push(` ${expected[i]}`);
+            i += 1;
+            j += 1;
+        } else if (j >= received.length || (i < expected.length && common[i + 1][j] >= common[i][j + 1])) {
+            diff.push(`-${expected[i]}`);
+            i += 1;
+        } else {
+            diff.push(`+${received[j]}`);
+            j += 1;
+        }
+    }
+    return diff;
 }
 
 /**
@@ -548,12 +596,13 @@ function escapeInline(value) {
  * Wrap text in a fenced code block whose fence is longer than any backtick
  * run inside the text, so judge output cannot break out of the block.
  * @param {string} text
+ * @param {string} [language] fence info string, `text` by default
  * @returns {string}
  */
-function fence(text) {
+function fence(text, language = 'text') {
     const longestRun = Math.max(2, ...(text.match(/`+/g) ?? []).map(run => run.length));
     const marker = '`'.repeat(longestRun + 1);
-    return `${marker}text\n${text}\n${marker}`;
+    return `${marker}${language}\n${text}\n${marker}`;
 }
 
 /**
