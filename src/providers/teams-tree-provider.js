@@ -125,8 +125,11 @@ function buildStandingTeamItem(team, currentTeam, problemCount) {
         : `${solvedCount} of ${problemCount} problems solved`;
     const summary = `${solvedCount} solved \u00b7 ${timeLabel}`;
 
+    const publicId = resolveRouteId(team);
+
     return {
-        id: `team:${resolveRouteId(team) ?? team.name}`,
+        // Without a stable public id the row gets no id: VS Code throws on duplicates.
+        id: publicId ? `team:${publicId}` : undefined,
         label: `${team.rank}. ${team.name}`,
         description: isCurrentTeam ? `${summary} (you)` : summary,
         tooltip: `Rank ${team.rank} \u00b7 ${solvedLabel} \u00b7 ${timeLabel} total time${isCurrentTeam ? ' \u00b7 your team' : ''}`,

@@ -157,12 +157,17 @@ describe('teams standings provider', () => {
         expect(rows[1].description).not.toContain('(you)');
     });
 
-    it('falls back to the team name for the row id when no publicId exists', () => {
+    it('omits the row id when no publicId exists so duplicate teams cannot collide', () => {
         const provider = new TeamsStandingsProvider();
 
-        provider.setSnapshot({ contest: { teams: [{ name: 'Bits', score: 0 }] } });
+        provider.setSnapshot({ contest: { teams: [{ name: 'Bits', score: 0 }, { name: 'Bits', score: 0 }, { score: 1 }, { score: 2 }] } });
 
-        expect(provider.getChildren()[0]).toMatchObject({ id: 'team:Bits', tooltip: expect.stringContaining('0 solved') });
+        const rows = provider.getChildren();
+        expect(rows).toHaveLength(4);
+        expect(rows[0]).toMatchObject({ tooltip: expect.stringContaining('0 solved') });
+        for (const row of rows) {
+            expect(row.id).toBeUndefined();
+        }
     });
 
     it('repeats the rank number for tied teams in the label', () => {
