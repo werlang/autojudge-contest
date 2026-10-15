@@ -4,7 +4,7 @@ import { COMMANDS } from '../constants.js';
 import * as contestSession from '../services/contest-session.js';
 import { BrowserLogin } from '../services/browser-login.js';
 import { ContestSubmissionWorkspace } from '../workspace/contest-submission-workspace.js';
-import config, { resolveWebUrl } from '../utils/config.js';
+import { getBaseUrl, getPollIntervalMs, resolveWebUrl } from '../utils/config.js';
 
 /**
  * Register contest commands and keep the multi-step contest behavior inside the
@@ -28,16 +28,8 @@ export function registerContestCommands({ context, teamsStandingsProvider, treeP
         executeCommand: (command, ...args) => vscode.commands.executeCommand(command, ...args),
         openTextDocument: (options) => vscode.workspace.openTextDocument(options),
         outputChannel,
-        resolveBaseUrl: () => config.BASE_URL,
-        resolvePollIntervalMs: () => {
-            const configuredIntervalMs = config.POLL_INTERVAL_MS;
-
-            if (!Number.isFinite(configuredIntervalMs)) {
-                return 5000;
-            }
-
-            return Math.max(Math.trunc(configuredIntervalMs), 1000);
-        },
+        resolveBaseUrl: () => getBaseUrl(),
+        resolvePollIntervalMs: () => getPollIntervalMs(),
         sessionApi: contestSession,
         setContext: (key, value) => vscode.commands.executeCommand('setContext', key, value),
         showInformationMessage: (message) => vscode.window.showInformationMessage(message),

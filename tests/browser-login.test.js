@@ -8,6 +8,7 @@ import {
     generateLoginState,
     normalizeWebUrl,
 } from '../src/services/browser-login.js';
+import { INVALID_SETTING_CODE } from '../src/services/contest-api.js';
 
 const STATE = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde';
 
@@ -43,6 +44,20 @@ describe('normalizeWebUrl', () => {
         expect(() => normalizeWebUrl('not a url')).toThrow('autojudgeContest.webUrl');
         expect(() => normalizeWebUrl('file:///etc/passwd')).toThrow('autojudgeContest.webUrl');
         expect(() => normalizeWebUrl('vscode://autojudge.autojudge-contest/auth')).toThrow('autojudgeContest.webUrl');
+    });
+
+    it('throws a friendly INVALID_SETTING error naming the setting', () => {
+        let error;
+        try {
+            normalizeWebUrl('');
+        }
+        catch (caught) {
+            error = caught;
+        }
+
+        expect(error.message).toBe('The autojudgeContest.webUrl setting is not a valid http(s) URL. Fix it in Settings.');
+        expect(error.code).toBe(INVALID_SETTING_CODE);
+        expect(error.setting).toBe('autojudgeContest.webUrl');
     });
 });
 

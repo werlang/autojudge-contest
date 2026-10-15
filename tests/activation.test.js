@@ -117,6 +117,26 @@ describe('contest extension activation', () => {
         expect(context.subscriptions).toHaveLength(16);
     });
 
+    it('still activates when autojudgeContest.baseUrl is empty or invalid', async () => {
+        getConfiguration.mockImplementation(() => ({
+            get: (key, fallbackValue) => (key === 'baseUrl' ? '' : fallbackValue),
+        }));
+        vi.resetModules();
+
+        try {
+            const freshExtension = await import('../src/extension.js');
+            const context = { subscriptions: [] };
+
+            await expect(freshExtension.activate(context)).resolves.not.toThrow();
+            expect(registeredCommands.map(({ command }) => command)).toContain('autojudgeContest.loginTeam');
+        }
+        finally {
+            getConfiguration.mockImplementation(() => ({
+                get: (_key, fallbackValue) => fallbackValue,
+            }));
+        }
+    });
+
     it('exports a deactivate function', () => {
         expect(typeof extensionModule.deactivate).toBe('function');
     });

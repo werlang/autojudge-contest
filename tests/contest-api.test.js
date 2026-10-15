@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { isSessionEnded, redeemHandoffCode } from '../src/services/contest-api.js';
+import { INVALID_SETTING_CODE, isSessionEnded, normalizeBaseUrl, redeemHandoffCode } from '../src/services/contest-api.js';
 
 const fetchMock = vi.fn();
 
@@ -74,4 +74,30 @@ describe('isSessionEnded', () => {
         expect(isSessionEnded(new Error('boom'))).toBe(false);
         expect(isSessionEnded(undefined)).toBe(false);
     });
+});
+
+
+describe('normalizeBaseUrl', () => {
+    it('keeps a base path and ends with exactly one slash', () => {
+        expect(normalizeBaseUrl(' https://api.autojudge.test ')).toBe('https://api.autojudge.test/');
+        expect(normalizeBaseUrl('http://localhost:3000/api///')).toBe('http://localhost:3000/api/');
+    });
+
+    it.each(['', '   ', undefined, 'not a url', 'ftp://example.test', 'file:///etc/passwd'])(
+        'throws an INVALID_SETTING error for %j',
+        (value) => {
+            let error;
+            try {
+                normalizeBaseUrl(value);
+            }
+            catch (caught) {
+                error = caught;
+            }
+
+            expect(error.message).toBe('The autojudgeContest.baseUrl setting is not a valid http(s) URL. Fix it in Settings.');
+            expect(error.code).toBe(INVALID_SETTING_CODE);
+            expect(error.code).toBe('INVALID_SETTING');
+            expect(error.setting).toBe('autojudgeContest.baseUrl');
+        },
+    );
 });

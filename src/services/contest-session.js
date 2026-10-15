@@ -2,7 +2,7 @@ import { clearStoredSession, readStoredSession, writeStoredSession } from './ses
 import { getContestDetails, getContestProblems, getCurrentTeam, getSubmissions, isContestNotStarted, redeemHandoffCode, submitSolution as submitContestSolution } from './contest-api.js';
 import { isPendingSubmission } from '../utils/submission-status.js';
 import { resolveRouteId } from '../utils/public-id.js';
-import config from '../utils/config.js';
+import { getPollIntervalMs } from '../utils/config.js';
 
 export { clearStoredSession, readStoredSession, writeStoredSession };
 
@@ -103,7 +103,7 @@ export async function submitSolution({ baseUrl, code, context, filename, problem
 export async function pollSubmissionResult({
     baseUrl,
     context,
-    pollIntervalMs = config.POLL_INTERVAL_MS,
+    pollIntervalMs = getPollIntervalMs(),
     submissionId,
     timeoutMs = DEFAULT_SUBMISSION_POLL_TIMEOUT_MS,
 }) {

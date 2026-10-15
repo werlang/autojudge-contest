@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { createInvalidSettingError } from './contest-api.js';
 
 /**
  * Path (on the `vscode://autojudge.autojudge-contest` URI) the web app redirects
@@ -44,6 +45,7 @@ export class BrowserLoginError extends Error {
  * because the result is handed to the system browser.
  * @param {string} value
  * @returns {string} URL with a trailing slash
+ * @throws {Error} with `code` INVALID_SETTING when the value is empty, unparsable or not http(s)
  */
 export function normalizeWebUrl(value) {
     const trimmed = String(value ?? '').trim();
@@ -53,11 +55,11 @@ export function normalizeWebUrl(value) {
         url = new URL(trimmed);
     }
     catch {
-        throw new Error('Set autojudgeContest.webUrl to a valid AutoJudge web address.');
+        throw createInvalidSettingError('autojudgeContest.webUrl');
     }
 
     if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-        throw new Error('Set autojudgeContest.webUrl to a valid AutoJudge web address.');
+        throw createInvalidSettingError('autojudgeContest.webUrl');
     }
 
     url.search = '';

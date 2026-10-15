@@ -7,6 +7,8 @@ const vscodeState = vi.hoisted(() => ({
     registerUriHandler: vi.fn(),
     showErrorMessage: vi.fn(),
     showWarningMessage: vi.fn(),
+    baseUrl: 'https://api.autojudge.test',
+    pollIntervalMs: 5000,
     webUrl: 'https://autojudge.io',
     withProgress: vi.fn(),
 }));
@@ -32,7 +34,7 @@ vi.mock('vscode', () => ({
     },
     workspace: {
         getConfiguration: () => ({
-            get: (key, fallbackValue) => (key === 'webUrl' ? vscodeState.webUrl : fallbackValue),
+            get: (key, fallbackValue) => (key in vscodeState ? vscodeState[key] : fallbackValue),
         }),
     },
 }), { virtual: true });
@@ -83,6 +85,8 @@ function openedState() {
 beforeEach(() => {
     vi.clearAllMocks();
     vscodeState.webUrl = 'https://autojudge.io';
+    vscodeState.baseUrl = 'https://api.autojudge.test';
+    vscodeState.pollIntervalMs = 5000;
     vscodeState.openExternal.mockResolvedValue(true);
     vscodeState.registerUriHandler.mockReturnValue({ dispose: vi.fn() });
     vscodeState.showWarningMessage.mockResolvedValue(undefined);
@@ -212,5 +216,54 @@ describe('browser team login', () => {
         uriHandler.handleUri({ path: '/auth', query: `code=real-code&state=${openedState()}` });
         await login;
         expect(contestSession.redeemAndLoadContest).toHaveBeenCalledWith(expect.objectContaining({ code: 'real-code' }));
+    });
+});
+
+
+describe('live settings readers', () => {
+    it('imports config without throwing when baseUrl is empty or invalid', async () => {
+        vscodeState.baseUrl = '';
+        vi.resetModules();
+
+        const configModule = await import('../src/utils/config.js');
+
+        expect(configModule.default.SUPPORTED_EXTENSIONS).toContain('.py');
+        expect(() => configModule.getBaseUrl()).toThrow('autojudgeContest.baseUrl');
+        expect(() => configModule.default.BASE_URL).toThrow('autojudgeContest.baseUrl');
+        expect(configModule.default.POLL_INTERVAL_MS).toBe(5000);
+    });
+
+    it('getBaseUrl reads the live value and throws an INVALID_SETTING error when it is invalid', async () => {
+        const { getBaseUrl } = await import('../src/utils/config.js');
+
+        vscodeState.baseUrl = 'https://one.test/api/';
+        expect(getBaseUrl()).toBe('https://one.test/api/');
+        vscodeState.baseUrl = 'https://two.test';
+        expect(getBaseUrl()).toBe('https://two.test/');
+
+        vscodeState.baseUrl = 'ftp://two.test';
+        let error;
+        try {
+            getBaseUrl();
+        }
+        catch (caught) {
+            error = caught;
+        }
+        expect(error.code).toBe('INVALID_SETTING');
+        expect(error.setting).toBe('autojudgeContest.baseUrl');
+        expect(error.message).toBe('The autojudgeContest.baseUrl setting is not a valid http(s) URL. Fix it in Settings.');
+    });
+
+    it('getPollIntervalMs reads live, falls back to 5000 and clamps to at least 1000', async () => {
+        const { default: config, getPollIntervalMs } = await import('../src/utils/config.js');
+
+        vscodeState.pollIntervalMs = 2500.9;
+        expect(getPollIntervalMs()).toBe(2500);
+        vscodeState.pollIntervalMs = 10;
+        expect(getPollIntervalMs()).toBe(1000);
+        vscodeState.pollIntervalMs = 'abc';
+        expect(getPollIntervalMs()).toBe(5000);
+        vscodeState.pollIntervalMs = 3000;
+        expect(config.POLL_INTERVAL_MS).toBe(3000);
     });
 });

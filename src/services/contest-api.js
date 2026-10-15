@@ -17,16 +17,45 @@ export const HANDOFF_INVALID_CODE = 'HANDOFF_INVALID';
 export const CONTEST_NOT_STARTED_CODE = 'CONTEST_NOT_STARTED';
 
 /**
+ * Error code attached to errors caused by an invalid `autojudgeContest.*`
+ * setting. `error.setting` names the offending setting so callers can offer to
+ * open it in Settings.
+ */
+export const INVALID_SETTING_CODE = 'INVALID_SETTING';
+
+/**
+ * Build the friendly error thrown for an invalid URL setting.
+ * @param {string} setting full setting id, e.g. `autojudgeContest.baseUrl`
+ * @returns {Error & { code: string, setting: string }}
+ */
+export function createInvalidSettingError(setting) {
+    const error = new Error(`The ${setting} setting is not a valid http(s) URL. Fix it in Settings.`);
+    error.code = INVALID_SETTING_CODE;
+    error.setting = setting;
+    return error;
+}
+
+/**
  * Normalize the contest API base URL while preserving optional base paths.
  * @param {string} value
  * @returns {string}
+ * @throws {Error} with `code` INVALID_SETTING when the value is empty, unparsable or not http(s)
  */
 export function normalizeBaseUrl(value) {
-    if (!value || !value.trim()) {
-        throw new Error('Set autojudgeContest.baseUrl to a valid AutoJudge API URL.');
+    const trimmed = String(value ?? '').trim();
+    let url;
+
+    try {
+        url = new URL(trimmed);
+    }
+    catch {
+        throw createInvalidSettingError('autojudgeContest.baseUrl');
     }
 
-    const url = new URL(value.trim());
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+        throw createInvalidSettingError('autojudgeContest.baseUrl');
+    }
+
     const pathname = url.pathname.replace(/\/+$/, '');
     url.pathname = pathname ? `${pathname}/` : '/';
     return url.toString();
