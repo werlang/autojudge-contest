@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Open Full Standings** (`autojudgeContest.openStandings`) opens the whole scoreboard as a table: rank, team, a ✓ per solved problem, solved count, and total time, with a legend naming each problem column. It is the first row of the Standings view.
+- **Show Unsolved Problems Only** (`autojudgeContest.showUnsolvedProblems`) and **Show All Problems** (`autojudgeContest.showAllProblems`) toggle a filter in the Contest Explorer title bar. The choice is remembered.
+
+### Changed
+
+- The contest header in Contest Explorer shows the contest phase (**Running**, **Frozen**, **Ended**, or **Not started**) instead of the team name.
+- Problems are shown by title alone, as on the AutoJudge website, without the `A.` / `B.` letter prefix, in Contest Explorer, quick picks, notifications, and page names.
+- Submission ages past an hour keep their minutes (`1h20m ago` instead of `1h ago`).
+- The submission page's output diff marks your output as `-` (red) and the expected output as `+` (green). **Compare Expected and Received Output** puts your output on the left to match.
+- Submission pages lead with a ✓ or ✗ mark, the verdict, and the problem (`# ✗ Wrong Answer · Maze Runner`), and the field list now includes the submission number.
+
 ## [0.2.1] - 2026-10-15
 
 ### Added

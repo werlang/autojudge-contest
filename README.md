@@ -11,7 +11,7 @@ Compete in AutoJudge programming contests without leaving VS Code: read the prob
 - **Read problems in VS Code.** Statements open as Markdown pages next to your code, with each public test case in a copyable block.
 - **Test with the official samples.** Export a problem's public tests as `.in` / `.out` files beside your solution in one click.
 - **Submit safely.** Submit the file you are editing, pick the problem from a short list, and confirm before it goes to the judge.
-- **See why you got Wrong Answer.** Verdicts arrive as notifications, and the submission page shows an inline diff of the expected output against yours.
+- **See why you got Wrong Answer.** Verdicts arrive as notifications, and the submission page shows an inline diff of your output against the expected one.
 - **Keep an eye on the clock.** The status bar shows the time left, your rank, and how many submissions are being judged.
 - **Follow the live scoreboard.** The Standings view ranks every team and stars yours.
 
@@ -20,12 +20,15 @@ Compete in AutoJudge programming contests without leaving VS Code: read the prob
 ### Contest Explorer, Standings, and the status bar
 
 <p align="center">
-  <img src="media/explorer.png" alt="Contest Explorer with lettered problems, solved and unsolved balloons, submissions with verdicts and ages, the Standings view with the team starred, and the status bar countdown">
+  <img src="media/explorer.png" alt="Contest Explorer with problems, solved and unsolved balloons, submissions with verdicts and ages, the Standings view with the team starred, and the status bar countdown">
 </p>
 
-- Problems are listed by letter (**A.**, **B.**, …). A filled balloon marks a solved problem and a hollow ring one you have not solved yet, with your attempt count beside it.
-- Each problem lists its own submissions, newest first, with the verdict and how long ago it was sent. A pending submission shows a spinning **Judging…** label until the verdict arrives.
-- **Standings** ranks teams by solved problems, then by lowest total time. Your team is starred and marked `(you)`. A notice appears while the scoreboard is frozen. Click a team to see its solved problems and total time.
+- The contest header shows the contest name and its phase: **Running**, **Frozen**, **Ended**, or **Not started**.
+- Problems are listed by title in contest order, as on the AutoJudge website. A filled balloon marks a solved problem and a hollow ring one you have not solved yet, with your attempt count beside it.
+- The **filter** button in the view title switches between all problems and unsolved problems only. VS Code remembers your choice.
+- Each problem lists its own submissions, newest first, with the verdict and how long ago it was sent (`5 min ago`, `1h20m ago`). A pending submission shows a spinning **Pending** label, and its problem shows **Judging…**, until the verdict arrives.
+- **Standings** ranks teams by solved problems, then by lowest total time in minutes (`3 solved · 287 min`). Your team is starred and marked `(you)`. A notice appears while the scoreboard is frozen. Click a team to see its solved problems and total time.
+- The first Standings row, **Full standings**, opens the whole scoreboard as a table: every team, a ✓ under each problem it solved, its solved count, and its total time. Problem columns are labelled A, B, C… and a legend under the table gives each problem's name.
 - The status bar shows `time left · #rank · Judging`, turns to a warning colour in the last 15 minutes, and opens the **Contest Overview** page when clicked.
 
 ### Problem statements and public test cases
@@ -44,8 +47,8 @@ Compete in AutoJudge programming contests without leaving VS Code: read the prob
 </p>
 
 - Each verdict arrives as a notification with **View Details**, plus **Compare Output** when the judge reported both the expected and the received output.
-- The submission page shows the verdict, time or penalty, the judge's hint, and an inline diff of expected versus your output, followed by the raw outputs.
-- **Compare Output** opens the same comparison in VS Code's side-by-side diff editor.
+- The submission page heading shows ✓ or ✗ with the verdict and problem. Below it are the verdict, problem, submission number, submit time, time or penalty, file, and language, then the judge's hint, an inline diff, and the raw outputs. In the diff, your lines are marked `-` (red) and the expected lines `+` (green).
+- **Compare Output** opens the same comparison in VS Code's side-by-side diff editor, with your output on the left and the expected output on the right.
 - Submissions still being judged keep being checked, even after you restart VS Code.
 
 ### Submitting
@@ -86,7 +89,10 @@ All commands are in the **AutoJudge Contest** category of the Command Palette.
 | **Export Public Test Cases** | Writes a problem's public tests as `.in` / `.out` files. |
 | **Open Submission** | Opens a submission's details. Contest Explorer only. |
 | **Open Team Details** | Opens a team's rank, solved problems, and total time. Standings only. |
-| **Compare Expected and Received Output** | Opens a side-by-side diff of a submission's expected and received output. Contest Explorer only. |
+| **Open Full Standings** | Opens the whole scoreboard as a table with a column per problem. Also the first row of Standings. |
+| **Compare Expected and Received Output** | Opens a side-by-side diff of a submission's received output (left) and expected output (right). Contest Explorer only. |
+| **Show Unsolved Problems Only** | Hides solved problems in the Contest Explorer. Also the **filter** button in its title bar. |
+| **Show All Problems** | Lists every problem again. Replaces the filter button while unsolved problems only are shown. |
 
 ## Settings
 
