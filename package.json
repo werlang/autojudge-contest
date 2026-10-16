@@ -2,7 +2,7 @@
   "name": "autojudge-contest",
   "displayName": "AutoJudge Contest",
   "description": "Read problems, export public tests, submit solutions, and follow verdicts and live standings of AutoJudge contests inside VS Code.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "autojudge",
   "license": "MIT",
   "engines": {

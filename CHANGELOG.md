@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-16
+
 ### Added
 
 - **Open Full Standings** (`autojudgeContest.openStandings`) opens the whole scoreboard as a table: rank, team, a ✓ per solved problem, solved count, and total time, with a legend naming each problem column. It is the first row of the Standings view.
