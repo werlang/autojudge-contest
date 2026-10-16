@@ -33,9 +33,10 @@ const ICON_FALLBACK_COLOR = '#8b8b8b';
 
 /**
  * Provide the contest explorer tree for logged-in contest snapshots: a contest
- * header (contest and team name), then one row per problem (letter, title, a
+ * header (contest name and phase), then one row per problem (title, a
  * balloon icon that is filled once solved, and a short state) with that
- * problem's submissions nested newest-first.
+ * problem's submissions nested newest-first. With the "unsolved only" filter
+ * on, solved problems are left out.
  */
 export class ContestTreeProvider {
     /**
@@ -248,15 +249,15 @@ export class ContestTreeProvider {
      * @returns {Record<string, unknown>}
      */
     buildProblemItem(problem, problems, submissions, now) {
-        const letter = getProblemLetter(problem, problems);
-        const title = getProblemTitle(problem, letter);
+        const title = getProblemTitle(problem, getProblemLetter(problem, problems));
         const summary = summarizeProblemSubmissions(problem, submissions);
         const children = submissions
             .filter(submission => sameEntity(submission?.problem, problem))
             .sort((left, right) => toTime(right.submittedAt) - toTime(left.submittedAt))
             .map(submission => buildSubmissionItem(submission, now));
         const publicId = resolveRouteId(problem);
-        const label = letter ? `${letter}. ${title}` : title;
+        // Titles alone, as on the AutoJudge platform: no contest letter prefix.
+        const label = title;
         const description = buildProblemDescription(summary);
 
         return {
@@ -267,7 +268,7 @@ export class ContestTreeProvider {
             accessibilityInformation: {
                 label: [label, summary.solved ? 'solved' : 'not solved', description].filter(Boolean).join(', '),
             },
-            tooltip: buildProblemTooltip(letter, title, summary),
+            tooltip: buildProblemTooltip(title, summary),
             collapsibleState: resolveProblemCollapsibleState(summary, children.length),
             contextValue: TREE_CONTEXT.PROBLEM,
             iconPath: this.createColoredCircleIcon(problem?.color, summary.solved),
@@ -288,9 +289,10 @@ export class ContestTreeProvider {
 }
 
 /**
- * Build the contest header row: the contest name with the team name as its
- * description. Timing and rank live in the status bar, so the row stays short;
- * the tooltip still carries timing, team, and local start/end times.
+ * Build the contest header row: the contest name with its phase (`Running`,
+ * `Frozen`, `Ended`, `Not started`) as the description. Time left and rank live
+ * in the status bar and the team in Standings, so the row stays short; the
+ * tooltip still carries timing, team, and local start/end times.
  * @param {{ team?: object, contest?: object, contestNotStarted?: boolean }} snapshot
  * @param {number} now
  * @returns {Record<string, unknown>}
@@ -306,7 +308,7 @@ function buildContestHeaderItem(snapshot, now) {
     return {
         id: publicId ? `contest:${publicId}` : 'contest',
         label: contestName,
-        description: teamName,
+        description: describeContestPhase(contest, timing, Boolean(snapshot.contestNotStarted)),
         collapsibleState: 0,
         contextValue: TREE_CONTEXT.CONTEST,
         iconPath: new vscode.ThemeIcon('mortar-board', new vscode.ThemeColor('charts.blue')),
@@ -317,6 +319,28 @@ function buildContestHeaderItem(snapshot, now) {
             arguments: [contest],
         },
     };
+}
+
+/**
+ * Name the contest phase for the header row: `Not started`, `Running`,
+ * `Frozen` (running with the scoreboard frozen), or `Ended`; empty when there
+ * is no start time and the server did not say the contest has not started.
+ * @param {object | null} contest
+ * @param {ReturnType<typeof getContestTiming>} timing
+ * @param {boolean} notStartedFlag
+ * @returns {string}
+ */
+export function describeContestPhase(contest, timing, notStartedFlag) {
+    if (timing.phase === 'notStarted') {
+        // Without a start time, only claim "Not started" when the server said so.
+        return notStartedFlag || timing.startTime ? 'Not started' : '';
+    }
+
+    if (timing.phase === 'ended') {
+        return 'Ended';
+    }
+
+    return contest?.frozenScoreboard ? 'Frozen' : 'Running';
 }
 
 /**
@@ -419,14 +443,13 @@ function resolveProblemCollapsibleState(summary, childCount) {
 }
 
 /**
- * Build the problem tooltip: letter and title, attempts, and first accepted time.
- * @param {string} letter
+ * Build the problem tooltip: title, attempts, and first accepted time.
  * @param {string} title
  * @param {ReturnType<typeof summarizeProblemSubmissions>} summary
  * @returns {string}
  */
-function buildProblemTooltip(letter, title, summary) {
-    const lines = [letter ? `Problem ${letter}: ${title}` : title];
+function buildProblemTooltip(title, summary) {
+    const lines = [title];
 
     if (summary.solved) {
         lines.push(`${SOLVED_MARK} Solved in ${formatAttempts(summary.attempts)}`);

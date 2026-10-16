@@ -6,6 +6,7 @@ describe('time formatting', () => {
     it('formats minutes with at most one decimal', () => {
         expect(formatMinutes(20 * 60000)).toBe('20 min');
         expect(formatMinutes(12.54 * 60000)).toBe('12.5 min');
+        expect(formatMinutes(1.8 * 60000)).toBe('1.8 min');
         expect(formatMinutes(undefined)).toBe('0 min');
     });
 
@@ -22,6 +23,9 @@ describe('time formatting', () => {
         expect(formatRelativeTime('2026-06-03T11:59:30Z', now)).toBe('just now');
         expect(formatRelativeTime('2026-06-03T11:55:00Z', now)).toBe('5 min ago');
         expect(formatRelativeTime('2026-06-03T09:00:00Z', now)).toBe('3h ago');
+        // Past an hour the minutes stay, so ages an hour apart still differ.
+        expect(formatRelativeTime('2026-06-03T10:40:00Z', now)).toBe('1h20m ago');
+        expect(formatRelativeTime('2026-06-03T10:59:00Z', now)).toBe('1h1m ago');
         expect(formatRelativeTime('nope', now, '?')).toBe('?');
         expect(formatLocalDateTime(null, 'Not started')).toBe('Not started');
         expect(formatLocalDateTime('2026-06-03T11:55:00Z')).not.toBe('Unknown');

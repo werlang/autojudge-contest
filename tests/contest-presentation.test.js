@@ -40,10 +40,10 @@ const CONTEST = {
 };
 
 describe('renderProblemPage', () => {
-    it('titles the page with the contest letter and renders statement and 1-based cases', () => {
+    it('titles the page with the problem title and renders statement and 1-based cases', () => {
         const page = renderProblemPage(PROBLEMS[1], { problems: PROBLEMS });
 
-        expect(page.startsWith('# A. A + B\n')).toBe(true);
+        expect(page.startsWith('# A + B\n')).toBe(true);
         expect(page).toContain('**Not attempted yet**');
         expect(page).toContain('Add two integers.');
         expect(page).toContain('## Public test cases');
@@ -95,7 +95,7 @@ describe('renderProblemPage', () => {
 });
 
 describe('renderSubmissionDetails', () => {
-    it('renders an accepted submission with letter, local time, and Time', () => {
+    it('leads with a mark, the verdict and the problem, then lists every field', () => {
         const submission = {
             id: 852,
             problem: { publicId: 'paaaaaaaaaaaa' },
@@ -107,15 +107,14 @@ describe('renderSubmissionDetails', () => {
         };
         const page = renderSubmissionDetails(submission, { problems: PROBLEMS });
 
-        expect(page.startsWith('# Submission 852\n')).toBe(true);
-        // The fields list carries verdict and problem, so no summary sentence repeats them.
-        expect(page).not.toContain('**Accepted** for');
-        expect(page).toContain('- **Verdict:** Accepted');
-        expect(page).toContain('- **Problem:** A. A + B');
-        expect(page).toContain(`- **Submitted:** ${formatLocalDateTime(submission.submittedAt)} (`);
-        expect(page).toContain('- **Time:** 20 min');
-        expect(page).toContain('- **File:** main.cpp');
-        expect(page).toContain('- **Language:** C++');
+        expect(page.split('\n')[0]).toBe('# ✓ Accepted · A + B');
+        expect(page).toContain([
+            '- **Verdict:** Accepted',
+            '- **Problem:** A + B',
+            '- **Submission:** \\#852',
+            `- **Submitted:** ${formatLocalDateTime(submission.submittedAt)} (`,
+        ].join('\n'));
+        expect(page).toContain('- **Time:** 20 min\n- **File:** main.cpp\n- **Language:** C++');
         expect(page).not.toContain('2026-05-28T03:10:00.000Z');
         expect(page).not.toContain('paaaaaaaaaaaa');
         expect(page).not.toMatch(EMOJI);
@@ -130,9 +129,8 @@ describe('renderSubmissionDetails', () => {
             hint: { message: 'Check the edges.', expected: '3\n', received: '```4' },
         }, { problems: PROBLEMS });
 
-        expect(page).not.toContain('**Wrong Answer** for');
+        expect(page.split('\n')[0]).toBe('# ✗ Wrong Answer · Binary Search');
         expect(page).toContain('- **Verdict:** Wrong Answer');
-        expect(page).toContain('- **Problem:** B. Binary Search');
         expect(page).toContain('- **Penalty:** 20 min');
         expect(page).not.toContain('- **Time:**');
         expect(page).toContain('## Hint\n\n```text\nCheck the edges.\n```');
@@ -151,8 +149,9 @@ describe('renderSubmissionDetails', () => {
         });
 
         expect(page).toContain('## Output difference');
-        expect(page).toContain('`-` expected, `+` your output');
-        expect(page).toContain('```diff\n  42\n  17\n- 8\n+ 9\n```');
+        // Your lines read as removed (red), the expected ones as their replacement (green).
+        expect(page).toContain('`-` your output, `+` expected');
+        expect(page).toContain('```diff\n  42\n  17\n- 9\n+ 8\n```');
         expect(page.indexOf('## Output difference')).toBeLessThan(page.indexOf('### Expected'));
         expect(page).toContain('### Expected\n\n```text\n42\n17\n8\n```');
     });
@@ -164,7 +163,7 @@ describe('renderSubmissionDetails', () => {
             hint: { expected: '7\n-1\n12', received: '7\n0\n12' },
         });
 
-        expect(page).toContain('```diff\n  7\n- -1\n+ 0\n  12\n```');
+        expect(page).toContain('```diff\n  7\n- 0\n+ -1\n  12\n```');
         expect(page).not.toContain('--1');
     });
 
@@ -175,7 +174,7 @@ describe('renderSubmissionDetails', () => {
             hint: { expected: 'a\nb\n```', received: 'b\nc\n```' },
         });
 
-        expect(page).toContain('````diff\n- a\n  b\n+ c\n  ```\n````');
+        expect(page).toContain('````diff\n+ a\n  b\n- c\n  ```\n````');
     });
 
     it('notes whitespace-only differences in the diff', () => {
@@ -210,11 +209,9 @@ describe('renderSubmissionDetails', () => {
     it('omits missing fields instead of rendering undefined', () => {
         const page = renderSubmissionDetails({ id: 3, status: 'PENDING' });
 
-        expect(page).toContain('Still being judged.');
+        // No mark while pending, and no penalty before a verdict.
+        expect(page).toBe('# Pending\n\n*Still being judged.*\n\n- **Verdict:** Pending\n- **Submission:** \\#3\n');
         expect(page).not.toContain('undefined');
-        expect(page).not.toContain('**Problem:**');
-        expect(page).not.toContain('**Submitted:**');
-        expect(page).not.toContain('**Penalty:**');
         expect(page).not.toContain('## Output difference');
     });
 
@@ -288,7 +285,7 @@ describe('renderTeamStandingDetails', () => {
         expect(page).toContain('- **Rank:** #2 of 3');
         expect(page).toContain('- **Solved:** 1 of 2');
         expect(page).toContain('- **Total time:** 15 min');
-        expect(page).toContain('- A. A + B');
+        expect(page).toContain('- A + B');
         expect(page).not.toContain('Binary Search');
         expect(page).not.toContain('> -');
         expect(page).not.toMatch(EMOJI);
@@ -298,7 +295,7 @@ describe('renderTeamStandingDetails', () => {
         const page = renderTeamStandingDetails(CONTEST.teams[1], { contest: CONTEST });
 
         expect(page).toContain('- **Rank:** #1 of 3');
-        expect(page.indexOf('- A. A + B')).toBeLessThan(page.indexOf('- B. Binary Search'));
+        expect(page.indexOf('- A + B')).toBeLessThan(page.indexOf('- Binary Search'));
     });
 
     it('counts the raw solved ids but lists only the problems it can name', () => {
@@ -308,7 +305,7 @@ describe('renderTeamStandingDetails', () => {
 
         expect(page).toMatch(/^Ghost is ranked #\d+ with 2 problems solved\.$/m);
         expect(page).toContain('- **Solved:** 2 of 2');
-        expect(page).toContain('- A. A + B');
+        expect(page).toContain('- A + B');
         expect(page).not.toContain('pmissing');
     });
 
@@ -394,10 +391,10 @@ describe('renderContestDashboard', () => {
 });
 
 describe('page names', () => {
-    it('builds tab titles from letters and names', () => {
-        expect(getProblemPageName(PROBLEMS[0], PROBLEMS)).toBe('B. Binary Search');
+    it('builds tab titles from titles and names', () => {
+        expect(getProblemPageName(PROBLEMS[0], PROBLEMS)).toBe('Binary Search');
         expect(getProblemPageName({ title: 'Loose' })).toBe('Loose');
-        expect(getSubmissionPageName({ id: 852, problem: { publicId: 'paaaaaaaaaaaa' } }, PROBLEMS)).toBe('Submission 852 · A. A + B');
+        expect(getSubmissionPageName({ id: 852, problem: { publicId: 'paaaaaaaaaaaa' } }, PROBLEMS)).toBe('Submission 852 · A + B');
         expect(getSubmissionPageName({ id: 7 })).toBe('Submission 7');
         expect(getTeamPageName({ name: '  Bits ' })).toBe('Bits');
         expect(getTeamPageName({})).toBe('Unnamed team');
@@ -458,7 +455,7 @@ describe('inline escaping of server-provided text', () => {
     it('escapes problem titles, contest names, filenames, languages and verdicts', () => {
         const problem = { publicId: 'pevil0000000', order: 1, title: '# *bold* <b>x</b>\n- item' };
         const page = renderProblemPage(problem, { problems: [problem] });
-        expect(page.split('\n')[0]).toBe('# A. \\# \\*bold\\* &lt;b&gt;x&lt;/b&gt; - item');
+        expect(page.split('\n')[0]).toBe('# \\# \\*bold\\* &lt;b&gt;x&lt;/b&gt; - item');
 
         const submission = {
             id: 7,
@@ -471,13 +468,13 @@ describe('inline escaping of server-provided text', () => {
         expect(details).not.toContain('<script>');
         expect(details).toContain('- **File:** &lt;script&gt;alert(1)&lt;/script&gt; \\# h.cpp');
         expect(details).toContain('- **Language:** \\[x\\](https://phish.example)');
-        expect(details).toContain('- **Problem:** A. \\# \\*bold\\*');
+        expect(details.split('\n')[0]).toBe('# ✗ Wrong Answer · \\# \\*bold\\* &lt;b&gt;x&lt;/b&gt; - item');
 
         const overview = renderContestDashboard({ name: '<i>Cup</i>\n# x', startTime: null });
         expect(overview.split('\n')[0]).toBe('# Contest Overview · &lt;i&gt;Cup&lt;/i&gt; \\# x');
 
         const solved = { ...CONTEST, problems: [problem], teams: [{ publicId: 't1', name: 'T', solvedProblemIds: ['pevil0000000'] }] };
-        expect(renderTeamStandingDetails(solved.teams[0], { contest: solved })).toContain('- A. \\# \\*bold\\*');
+        expect(renderTeamStandingDetails(solved.teams[0], { contest: solved })).toContain('- \\# \\*bold\\*');
     });
 
     it('escapes a leading block marker and keeps plain names untouched', () => {

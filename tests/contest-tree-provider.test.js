@@ -89,7 +89,7 @@ describe('contest tree provider', () => {
         expect(provider.getChildren()).toEqual([]);
     });
 
-    it('renders the contest header with the contest name and only the team name, keeping timing in the tooltip', () => {
+    it('renders the contest header with the contest name and its phase, keeping team and timing in the tooltip', () => {
         const listener = vi.fn();
         const provider = new ContestTreeProvider({ now: () => NOW });
         provider.onDidChangeTreeData(listener);
@@ -105,7 +105,7 @@ describe('contest tree provider', () => {
         expect(header).toEqual(expect.objectContaining({
             id: 'contest:k3m9x2p7q8w1a',
             label: 'Regional Final',
-            description: 'Bits',
+            description: 'Running',
             contextValue: TREE_CONTEXT.CONTEST,
             iconPath: expect.objectContaining({ id: 'mortar-board' }),
             command: expect.objectContaining({
@@ -121,7 +121,7 @@ describe('contest tree provider', () => {
         expect(listener).toHaveBeenCalledTimes(1);
     });
 
-    it('describes ended and not-yet-started contests in the header tooltip, not the description', () => {
+    it('names the phase of ended, frozen, and not-yet-started contests, with the timing in the tooltip', () => {
         const ended = createProvider({}, START + 200 * MINUTE).getChildren()[0];
         const upcoming = createProvider({}, START - 25 * MINUTE).getChildren()[0];
         const unscheduled = createProvider({
@@ -129,7 +129,11 @@ describe('contest tree provider', () => {
             contestNotStarted: true,
         }).getChildren()[0];
 
-        expect([ended, upcoming, unscheduled].map(header => header.description)).toEqual(['Bits', 'Bits', 'Bits']);
+        const frozen = createProvider({ contest: buildContest({ frozenScoreboard: true }) }).getChildren()[0];
+        const endedFrozen = createProvider({ contest: buildContest({ frozenScoreboard: true }) }, START + 200 * MINUTE).getChildren()[0];
+
+        expect([ended, upcoming, unscheduled, frozen, endedFrozen].map(header => header.description))
+            .toEqual(['Ended', 'Not started', 'Not started', 'Frozen', 'Ended']);
         expect(ended.tooltip).toContain('Status: Ended');
         expect(upcoming.tooltip).toContain('Status: Starts in 25m');
         expect(unscheduled.tooltip).toContain('Status: Not started');
@@ -154,7 +158,7 @@ describe('contest tree provider', () => {
         const [header] = createProvider({ contest: { publicId: 'k3m9x2p7q8w1a' } }).getChildren();
 
         expect(header.label).toBe('Contest');
-        expect(header.description).toBe('Bits');
+        expect(header.description).toBe('');
         expect(header.tooltip).not.toContain('Status:');
     });
 
@@ -175,7 +179,7 @@ describe('contest tree provider', () => {
         expect(rootChildren[1].contextValue).toBeUndefined();
     });
 
-    it('labels problems by contest letter and describes solved, attempted, judging, and untouched states', () => {
+    it('labels problems by title alone and describes solved, attempted, judging, and untouched states', () => {
         const rootChildren = createProvider({
             problems: [
                 { publicId: 'pd', order: 4, title: 'Untouched' },
@@ -196,11 +200,11 @@ describe('contest tree provider', () => {
 
         const problems = rootChildren.slice(1);
         expect(problems.map(item => item.label)).toEqual([
-            'A. A + B',
-            'B. Binary Search',
-            'C. Cycles',
-            'D. Untouched',
-            'E. First Try',
+            'A + B',
+            'Binary Search',
+            'Cycles',
+            'Untouched',
+            'First Try',
         ]);
         expect(problems.map(item => item.description)).toEqual([
             '',
@@ -223,16 +227,16 @@ describe('contest tree provider', () => {
         }));
         expect(problems[0].command).toBeUndefined();
         expect(problems[0].iconPath.toString()).toContain(encodeURIComponent('#ff0000'));
-        expect(problems[0].tooltip).toContain('Problem A: A + B');
+        expect(problems[0].tooltip.split('\n')[0]).toBe('A + B');
         expect(problems[0].tooltip).toContain('Solved in 2 attempts');
         expect(problems[0].tooltip).toContain('First accepted: ');
         expect(problems[0].tooltip).toContain('(40 min)');
         expect(problems.map(item => item.accessibilityInformation.label)).toEqual([
-            'A. A + B, solved',
-            'B. Binary Search, not solved, 2 attempts',
-            'C. Cycles, not solved, Judging…',
-            'D. Untouched, not solved',
-            'E. First Try, solved',
+            'A + B, solved',
+            'Binary Search, not solved, 2 attempts',
+            'Cycles, not solved, Judging…',
+            'Untouched, not solved',
+            'First Try, solved',
         ]);
         expect(problems[1].tooltip).toContain('Not solved yet · 2 attempts');
         expect(problems[2].tooltip).toContain('Judging… 1 pending');
@@ -305,7 +309,7 @@ describe('contest tree provider', () => {
         const problems = [{ publicId: 'pa', order: 1, name: 'Sum' }, { publicId: 'pb', order: 2 }];
         const rows = createProvider({ problems }).getChildren().slice(1);
 
-        expect(rows.map(item => item.label)).toEqual(['A. Sum', 'B. Problem B']);
+        expect(rows.map(item => item.label)).toEqual(['Sum', 'Problem B']);
         expect(rows.map(item => item.label)).toEqual(problems.map(problem => getProblemPageName(problem, problems)));
     });
 
@@ -315,7 +319,7 @@ describe('contest tree provider', () => {
         });
         const problems = provider.getChildren().slice(1);
 
-        expect(problems.map(item => item.label)).toEqual(['A. Problem A', 'B. Problem B']);
+        expect(problems.map(item => item.label)).toEqual(['Problem A', 'Problem B']);
         expect(problems[0].iconPath.toString()).toContain(encodeURIComponent('#8b8b8b'));
         expect(provider.createColoredCircleIcon('not a color').toString()).toContain(encodeURIComponent('#8b8b8b'));
     });
@@ -418,6 +422,44 @@ describe('contest tree provider', () => {
             TREE_CONTEXT.SUBMISSION,
             TREE_CONTEXT.SUBMISSION,
         ]);
+    });
+
+    describe('unsolved-only filter', () => {
+        const snapshot = {
+            problems: [
+                { publicId: 'pa', order: 1, title: 'A + B' },
+                { publicId: 'pb', order: 2, title: 'Binary Search' },
+            ],
+            submissions: [buildSubmission(11, 'ACCEPTED', 'pa', 10), buildSubmission(12, 'WRONG_ANSWER', 'pb', 12)],
+        };
+
+        it('hides solved problems while on and shows them again when off', () => {
+            const listener = vi.fn();
+            const provider = createProvider(snapshot);
+            provider.onDidChangeTreeData(listener);
+
+            provider.setUnsolvedOnly(true);
+            expect(provider.getChildren().slice(1).map(item => item.label)).toEqual(['Binary Search']);
+            expect(provider.findSubmissionItem(11)).toBeUndefined();
+            expect(provider.findSubmissionItem(12)).toEqual(expect.objectContaining({ id: 'submission:12' }));
+
+            provider.setUnsolvedOnly(false);
+            expect(provider.getChildren().slice(1).map(item => item.label)).toEqual(['A + B', 'Binary Search']);
+            expect(listener).toHaveBeenCalledTimes(2);
+        });
+
+        it('shows an all-solved note when the filter hides every problem', () => {
+            const provider = createProvider({ ...snapshot, submissions: [
+                buildSubmission(11, 'ACCEPTED', 'pa', 10),
+                buildSubmission(13, 'ACCEPTED', 'pb', 20),
+            ] });
+            provider.setUnsolvedOnly(true);
+
+            const [, note, ...rest] = provider.getChildren();
+            expect(note).toEqual(expect.objectContaining({ id: 'all-solved', label: 'All problems solved' }));
+            expect(rest).toEqual([]);
+            expect(provider.getParent(note)).toBeUndefined();
+        });
     });
 
     describe('reveal support', () => {

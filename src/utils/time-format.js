@@ -9,7 +9,7 @@ const DAY_MS = 24 * HOUR_MS;
 
 /**
  * Format a contest time score or penalty (milliseconds) as minutes with at most
- * one decimal, dropping a trailing `.0` (`20 min`, `12.5 min`).
+ * one decimal, dropping a trailing `.0` (`20 min`, `1.8 min`).
  * @param {number} ms
  * @returns {string}
  */
@@ -67,8 +67,9 @@ export function formatLocalDateTime(value, fallback = 'Unknown') {
 }
 
 /**
- * Format how long ago a timestamp was (`just now`, `5 min ago`, `2h ago`,
- * `3d ago`), or return `fallback` for a missing or invalid value.
+ * Format how long ago a timestamp was (`just now`, `5 min ago`, `1h20m ago`,
+ * `2h ago`, `3d ago`), or return `fallback` for a missing or invalid value.
+ * Past an hour the minutes stay, so submissions an hour apart still differ.
  * @param {string | number | Date | undefined | null} value
  * @param {number} [now=Date.now()]
  * @param {string} [fallback='']
@@ -90,7 +91,9 @@ export function formatRelativeTime(value, now = Date.now(), fallback = '') {
     }
 
     if (elapsedMs < DAY_MS) {
-        return `${Math.floor(elapsedMs / HOUR_MS)}h ago`;
+        const hours = Math.floor(elapsedMs / HOUR_MS);
+        const minutes = Math.floor((elapsedMs % HOUR_MS) / MINUTE_MS);
+        return minutes ? `${hours}h${minutes}m ago` : `${hours}h ago`;
     }
 
     return `${Math.floor(elapsedMs / DAY_MS)}d ago`;

@@ -198,7 +198,7 @@ export function createContestController({
     const log = (level, message) => logToChannel(outputChannel, level, message);
 
     /**
-     * Label a problem as `A. Title` against the current contest problems,
+     * Label a problem by its title against the current contest problems,
      * tolerating missing titles.
      * @param {object | null | undefined} problem
      * @returns {string}
@@ -1365,11 +1365,13 @@ export function createContestController({
                     hint.expected,
                     hint.received,
                 );
+                // Received on the left, as in the submission page diff: the
+                // team's lines read as removed and the expected ones as added.
                 await executeCommand(
                     'vscode.diff',
-                    toFileUri(expectedPath),
                     toFileUri(receivedPath),
-                    `Submission #${selectedSubmission.id}: expected ↔ received`,
+                    toFileUri(expectedPath),
+                    `Submission #${selectedSubmission.id}: your output ↔ expected`,
                 );
                 return { expectedPath, receivedPath };
             }

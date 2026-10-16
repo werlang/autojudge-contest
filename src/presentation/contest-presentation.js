@@ -18,6 +18,10 @@ import { extractPublicCases } from '../workspace/contest-public-cases.js';
  *
  *   ## Section                   <- optional sections (statement, hint, cases)
  *
+ * The submission page heading leads with its outcome instead: `# ✗ Wrong
+ * Answer · Title` (`✓` for accepted). Those marks are text symbols, not
+ * emoji, so the pages stay emoji-free.
+ *
  * Fields whose value is missing are omitted instead of rendering `undefined`.
  *
  * Safety: every team, contest, problem, file and verdict name that is
@@ -61,12 +65,12 @@ export function formatSubmissionStatus(status) {
 }
 
 /**
- * Render the problem page: `# A. Title`, the team's progress on it, the
+ * Render the problem page: `# Title`, the team's progress on it, the
  * statement, and the public test cases numbered from 1 (matching the exported
  * testcase files).
  * @param {object} problem
  * @param {{ problems?: object[], submissions?: object[] }} [options]
- * @param {object[]} [options.problems] all contest problems, used for the letter
+ * @param {object[]} [options.problems] all contest problems, used to name an untitled problem
  * @param {object[]} [options.submissions] the team's own submissions
  * @returns {string}
  */
@@ -90,34 +94,39 @@ export function renderProblemPage(problem, { problems = [], submissions = [] } =
 }
 
 /**
- * Render one submission: verdict, problem, local submit time, time or penalty,
- * file details, judge hint, an inline line diff of expected versus received
- * output, and the raw outputs. The fields list already carries verdict and
- * problem, so a summary sentence appears only while the submission is pending.
+ * Render one submission. The heading carries the outcome (`# ✗ Wrong Answer ·
+ * Title`) and the field list every detail: verdict, problem, submission
+ * number, local submit time, time or penalty, file, and language. Then come the
+ * judge hint, an inline line diff of the team's output against the expected
+ * output, and the raw outputs.
  * @param {object} submission
  * @param {{ problems?: object[] }} [options]
- * @param {object[]} [options.problems] all contest problems, used for the letter
+ * @param {object[]} [options.problems] all contest problems, used to name an untitled problem
  * @returns {string}
  */
 export function renderSubmissionDetails(submission, { problems = [] } = {}) {
-    const verdict = escapeInline(formatSubmissionStatus(submission?.status));
+    const status = submission?.status;
+    const verdict = escapeInline(formatSubmissionStatus(status));
     const problemLabel = escapeInline(formatSubmissionProblemLabel(submission?.problem, problems));
+    const mark = getVerdictMark(status);
+    const heading = [mark ? `${mark} ${verdict}` : verdict, problemLabel].filter(Boolean).join(' · ');
+    const id = toText(submission?.id);
     const relative = formatRelativeTime(submission?.submittedAt);
-
-    const lines = [`# ${escapeInline(getSubmissionHeading(submission))}`, ''];
-    if (isPendingSubmission(submission?.status)) {
-        lines.push('*Still being judged.*', '');
-    }
-
     const submittedAt = submission?.submittedAt
         ? `${formatLocalDateTime(submission.submittedAt)}${relative ? ` (${relative})` : ''}`
         : '';
 
+    const lines = [`# ${heading}`, ''];
+    if (isPendingSubmission(status)) {
+        lines.push('*Still being judged.*', '');
+    }
+
     lines.push(...renderFields([
         ['Verdict', verdict],
         ['Problem', problemLabel],
+        ['Submission', id ? `\\#${escapeInline(id)}` : ''],
         ['Submitted', submittedAt],
-        [isPassedSubmission(submission?.status) ? 'Time' : 'Penalty', formatOptionalMinutes(submission?.score)],
+        [isPassedSubmission(status) ? 'Time' : 'Penalty', isPendingSubmission(status) ? '' : formatOptionalMinutes(submission?.score)],
         ['File', escapeInline(submission?.filename ?? submission?.fileName)],
         ['Language', escapeInline(submission?.language)],
     ]));
@@ -152,7 +161,7 @@ export function renderSubmissionDetails(submission, { problems = [] } = {}) {
 /**
  * Render one team's standing: rank, solved count (the raw server count, as
  * everywhere else), total time, and the solved problems it can name as a
- * lettered list.
+ * list of titles.
  * @param {object} team
  * @param {{ contest?: object, problems?: object[] } | null | undefined} snapshot
  * @returns {string}
@@ -319,8 +328,8 @@ export function renderContestDashboard(contest, { team, problems } = {}, now = D
 }
 
 /**
- * Build a problem page name: `A. Title`, or just the title when the problem is
- * not in the list.
+ * Build a problem page name: the problem title, or `Problem B` for an untitled
+ * problem in the list.
  * @param {object} problem
  * @param {object[]} [problems]
  * @returns {string}
@@ -330,7 +339,7 @@ export function getProblemPageName(problem, problems = []) {
 }
 
 /**
- * Build a submission page name: `Submission 852 · A. Title`.
+ * Build a submission page name: `Submission 852 · Title`.
  * @param {object} submission
  * @param {object[]} [problems]
  * @returns {string}
@@ -471,7 +480,7 @@ function formatFreeze(contest) {
 }
 
 /**
- * Format a minutes-valued contest setting (`20 min`), or '' when missing.
+ * Format a minutes-valued contest setting (`20'`), or '' when missing.
  * @param {unknown} minutes
  * @returns {string}
  */
@@ -487,6 +496,22 @@ function formatMinutesField(minutes) {
  */
 function formatOptionalMinutes(ms) {
     return ms != null && ms !== '' && Number.isFinite(Number(ms)) ? formatMinutes(ms) : '';
+}
+
+/**
+ * Pick the text mark that leads a submission page heading: `✓` accepted, `✗`
+ * any rejection, nothing while pending or for an unknown status.
+ * @param {string | undefined | null} status
+ * @returns {string}
+ */
+function getVerdictMark(status) {
+    if (isPassedSubmission(status)) {
+        return '✓';
+    }
+    if (isFailedSubmission(status) || isTimeLimitSubmission(status) || isErrorSubmission(status)) {
+        return '✗';
+    }
+    return '';
 }
 
 /**
@@ -515,16 +540,15 @@ function formatSubmissionProblemLabel(problem, problems) {
 }
 
 /**
- * Label a problem as `A. Title`, or just the title when no letter can be
- * resolved. Titles come from the shared `getProblemTitle`.
+ * Label a problem by its title, as the AutoJudge platform does (no contest
+ * letter prefix). The letter only names an untitled problem (`Problem B`).
+ * Titles come from the shared `getProblemTitle`.
  * @param {object} problem
  * @param {object[]} problems
  * @returns {string}
  */
 function formatProblemLabel(problem, problems) {
-    const letter = getProblemLetter(problem, problems);
-    const title = getProblemTitle(problem, letter);
-    return letter ? `${letter}. ${title}` : title;
+    return getProblemTitle(problem, getProblemLetter(problem, problems));
 }
 
 /**
@@ -594,12 +618,14 @@ function renderOutputDiff(expected, received, rawDiffers) {
     const expectedLines = expected.split('\n');
     const receivedLines = received.split('\n');
     const truncated = expectedLines.length > MAX_DIFF_LINES || receivedLines.length > MAX_DIFF_LINES;
-    const diff = diffLines(expectedLines.slice(0, MAX_DIFF_LINES), receivedLines.slice(0, MAX_DIFF_LINES));
+    // Received first: the team's wrong lines read as removed (red) and the
+    // expected lines as what replaces them (green).
+    const diff = diffLines(receivedLines.slice(0, MAX_DIFF_LINES), expectedLines.slice(0, MAX_DIFF_LINES));
 
     return [
         '## Output difference',
         '',
-        '`-` expected, `+` your output',
+        '`-` your output, `+` expected',
         ...(truncated ? ['', `*Only the first ${MAX_DIFF_LINES} lines of each output are compared.*`] : []),
         '',
         fence(diff.join('\n'), 'diff'),
@@ -623,19 +649,20 @@ function isWhitespaceOnlyDiff(diff) {
 
 /**
  * Line diff from a longest-common-subsequence table. Every line is a marker, a
- * space, then the content: shared lines get two spaces, expected-only lines
- * `- `, received-only lines `+ ` (removals first). The separating space keeps
- * content such as `-1` readable and the columns aligned.
- * @param {string[]} expected
- * @param {string[]} received
+ * space, then the content: shared lines get two spaces, lines only in `before`
+ * `- `, lines only in `after` `+ ` (removals first). The separating space keeps
+ * content such as `-1` readable and the columns aligned. The submission page
+ * passes the received output as `before` and the expected output as `after`.
+ * @param {string[]} before
+ * @param {string[]} after
  * @returns {string[]}
  */
-function diffLines(expected, received) {
-    // common[i][j] = length of the LCS of expected[i..] and received[j..].
-    const common = Array.from({ length: expected.length + 1 }, () => new Array(received.length + 1).fill(0));
-    for (let i = expected.length - 1; i >= 0; i -= 1) {
-        for (let j = received.length - 1; j >= 0; j -= 1) {
-            common[i][j] = expected[i] === received[j]
+function diffLines(before, after) {
+    // common[i][j] = length of the LCS of before[i..] and after[j..].
+    const common = Array.from({ length: before.length + 1 }, () => new Array(after.length + 1).fill(0));
+    for (let i = before.length - 1; i >= 0; i -= 1) {
+        for (let j = after.length - 1; j >= 0; j -= 1) {
+            common[i][j] = before[i] === after[j]
                 ? common[i + 1][j + 1] + 1
                 : Math.max(common[i + 1][j], common[i][j + 1]);
         }
@@ -644,16 +671,16 @@ function diffLines(expected, received) {
     const diff = [];
     let i = 0;
     let j = 0;
-    while (i < expected.length || j < received.length) {
-        if (i < expected.length && j < received.length && expected[i] === received[j]) {
-            diff.push(`  ${expected[i]}`);
+    while (i < before.length || j < after.length) {
+        if (i < before.length && j < after.length && before[i] === after[j]) {
+            diff.push(`  ${before[i]}`);
             i += 1;
             j += 1;
-        } else if (j >= received.length || (i < expected.length && common[i + 1][j] >= common[i][j + 1])) {
-            diff.push(`- ${expected[i]}`);
+        } else if (j >= after.length || (i < before.length && common[i + 1][j] >= common[i][j + 1])) {
+            diff.push(`- ${before[i]}`);
             i += 1;
         } else {
-            diff.push(`+ ${received[j]}`);
+            diff.push(`+ ${after[j]}`);
             j += 1;
         }
     }

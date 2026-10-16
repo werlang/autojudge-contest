@@ -627,7 +627,7 @@ describe('contest controller', () => {
     });
 
     describe('generated pages', () => {
-        it('names the problem page after its letter and title so the tab reads "Preview A. A + B.md"', async () => {
+        it('names the problem page after its title so the tab reads "Preview A + B.md"', async () => {
             const snapshot = createFullSnapshot();
             openTextDocument.mockResolvedValue({ uri: 'problem-uri' });
 
@@ -635,12 +635,12 @@ describe('contest controller', () => {
 
             expect(pageFiles.writePage).toHaveBeenCalledWith(
                 'problem-previews',
-                'A. A + B',
+                'A + B',
                 'problem-pa1b2c3d4e5f6',
-                expect.stringContaining('# A. A + B'),
+                expect.stringContaining('# A + B'),
             );
             expect(pageContent()).toContain('Add two integers.');
-            expect(openTextDocument).toHaveBeenCalledWith(`${ROOT}/problem-previews/A. A + B.md`);
+            expect(openTextDocument).toHaveBeenCalledWith(`${ROOT}/problem-previews/A + B.md`);
             expect(executeCommand).toHaveBeenCalledWith('markdown.showPreview', 'problem-uri', { preview: true });
         });
 
@@ -649,7 +649,7 @@ describe('contest controller', () => {
 
             await buildLoggedInController(snapshot).openProblem({ problem: snapshot.problems[1] });
 
-            expect(writtenPaths()).toEqual([`${ROOT}/problem-previews/B. Binary Search.md`]);
+            expect(writtenPaths()).toEqual([`${ROOT}/problem-previews/Binary Search.md`]);
         });
 
         it('opens the contest overview page named after the contest', async () => {
@@ -686,7 +686,7 @@ describe('contest controller', () => {
             expect(dashboard).not.toContain('1970');
         });
 
-        it('opens the submission page named "Submission 12 · A. A + B"', async () => {
+        it('opens the submission page named "Submission 12 · A + B"', async () => {
             const snapshot = createFullSnapshot();
             const submission = {
                 id: 12,
@@ -697,8 +697,9 @@ describe('contest controller', () => {
 
             const result = await buildLoggedInController(snapshot).openSubmission({ submission });
 
-            expect(writtenPaths()).toEqual([`${ROOT}/submission-details/Submission 12 · A. A + B.md`]);
-            expect(pageContent()).toContain('# Submission 12');
+            expect(writtenPaths()).toEqual([`${ROOT}/submission-details/Submission 12 · A + B.md`]);
+            expect(pageContent()).toContain('# ✓ Accepted · A + B');
+            expect(pageContent()).toContain('- **Submission:** \\#12');
             expect(result).toEqual(submission);
         });
 
@@ -712,7 +713,7 @@ describe('contest controller', () => {
             const content = pageContent(0);
             expect(content).toContain('- **Rank:** #2 of 2');
             expect(content).toContain('- **Solved:** 1 of 2');
-            expect(content).toContain('- A. A + B');
+            expect(content).toContain('- A + B');
         });
     });
 
@@ -750,10 +751,10 @@ describe('contest controller', () => {
             await buildLoggedInController(snapshot).openProblem();
 
             expect(showQuickPick).toHaveBeenCalledWith([
-                expect.objectContaining({ label: 'A. A + B', description: '✓ Solved' }),
-                expect.objectContaining({ label: 'B. Binary Search', description: '1 attempt' }),
+                expect.objectContaining({ label: 'A + B', description: '✓ Solved' }),
+                expect.objectContaining({ label: 'Binary Search', description: '1 attempt' }),
             ], expect.objectContaining({ placeHolder: 'Open which problem?' }));
-            expect(writtenPaths()).toEqual([`${ROOT}/problem-previews/B. Binary Search.md`]);
+            expect(writtenPaths()).toEqual([`${ROOT}/problem-previews/Binary Search.md`]);
         });
 
         it('does nothing when the problem quick pick is cancelled', async () => {
@@ -828,7 +829,7 @@ describe('contest controller', () => {
             const result = await buildLoggedInController(snapshot).submitActiveFile({ problem: snapshot.problems[0] });
 
             expect(showInformationMessage).toHaveBeenCalledWith(
-                'Submit main.cpp to A. A + B?',
+                'Submit main.cpp to A + B?',
                 { modal: true, detail: 'If it is rejected and you solve the problem later, it adds 20 min of penalty.' },
                 'Submit',
             );
@@ -894,7 +895,7 @@ describe('contest controller', () => {
             await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
 
             expect(showInformationMessage).toHaveBeenCalledWith(
-                'Submit main.cpp to A. A + B?',
+                'Submit main.cpp to A + B?',
                 { modal: true, detail: 'A rejected attempt adds penalty time if you solve the problem later.' },
                 'Submit',
             );
@@ -909,7 +910,7 @@ describe('contest controller', () => {
             const result = await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
 
             expect(result).toBeNull();
-            expect(showInformationMessage).toHaveBeenCalledWith('A. A + B is already solved.');
+            expect(showInformationMessage).toHaveBeenCalledWith('A + B is already solved.');
             expect(showWarningMessage).not.toHaveBeenCalled();
             expect(sessionApi.submitSolution).not.toHaveBeenCalled();
         });
@@ -1011,7 +1012,7 @@ describe('contest controller', () => {
 
             const [items, options] = showQuickPick.mock.calls[0];
             expect(options).toEqual(expect.objectContaining({ placeHolder: 'Submit main.cpp to which problem?' }));
-            expect(items.map(item => item.label)).toEqual(['B. Binary Search', 'A. A + B']);
+            expect(items.map(item => item.label)).toEqual(['Binary Search', 'A + B']);
             expect(items[0]).not.toHaveProperty('picked');
             expect(sessionApi.submitSolution).toHaveBeenCalledWith(expect.objectContaining({ problemId: 'pb2c3d4e5f6a1' }));
         });
@@ -1027,12 +1028,12 @@ describe('contest controller', () => {
 
             await controller.submitActiveFile();
 
-            expect(showQuickPick.mock.calls[0][0].map(item => item.label)).toEqual(['B. Binary Search']);
+            expect(showQuickPick.mock.calls[0][0].map(item => item.label)).toEqual(['Binary Search']);
             expect(sessionApi.submitSolution).toHaveBeenCalledWith(expect.objectContaining({ problemId: 'pb2c3d4e5f6a1' }));
 
             showQuickPick.mockClear();
             await controller.exportPublicCases();
-            expect(showQuickPick.mock.calls[0][0].map(item => item.label)).toEqual(['A. A + B', 'B. Binary Search']);
+            expect(showQuickPick.mock.calls[0][0].map(item => item.label)).toEqual(['A + B', 'Binary Search']);
         });
 
         it('does not preselect a solved remembered problem in the submit picker', async () => {
@@ -1047,7 +1048,7 @@ describe('contest controller', () => {
 
             const [items] = showQuickPick.mock.calls[0];
             expect(items).toHaveLength(1);
-            expect(items[0].label).toBe('B. Binary Search');
+            expect(items[0].label).toBe('Binary Search');
         });
 
         it('says all problems are solved instead of showing an empty submit picker', async () => {
@@ -1226,10 +1227,10 @@ describe('contest controller', () => {
             });
             expect(treeProvider.setSnapshot).toHaveBeenLastCalledWith({ ...snapshot, submissions: [final] });
             expect(statusBar.setPendingCount).toHaveBeenLastCalledWith(0);
-            expect(showInformationMessage).toHaveBeenCalledWith('Accepted: A. A + B (#27)', 'View Details');
+            expect(showInformationMessage).toHaveBeenCalledWith('Accepted: A + B (#27)', 'View Details');
             expect(showWarningMessage).not.toHaveBeenCalledWith(expect.stringContaining('#27'), expect.anything());
             // View Details opens the submission page.
-            expect(writtenPaths()).toContain(`${ROOT}/submission-details/Submission 27 · A. A + B.md`);
+            expect(writtenPaths()).toContain(`${ROOT}/submission-details/Submission 27 · A + B.md`);
             expect(result).toEqual(final);
         });
 
@@ -1244,13 +1245,13 @@ describe('contest controller', () => {
             await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
             await flushPromises();
 
-            expect(showWarningMessage).toHaveBeenCalledWith('Wrong Answer on A. A + B (#27)', 'View Details', 'Compare Output');
+            expect(showWarningMessage).toHaveBeenCalledWith('Wrong Answer on A + B (#27)', 'View Details', 'Compare Output');
             expect(toastCalls()).toEqual([]);
             expect(executeCommand).toHaveBeenCalledWith(
                 'vscode.diff',
-                fileUri(`${ROOT}/submission-output/27/expected.txt`),
                 fileUri(`${ROOT}/submission-output/27/received.txt`),
-                'Submission #27: expected ↔ received',
+                fileUri(`${ROOT}/submission-output/27/expected.txt`),
+                'Submission #27: your output ↔ expected',
             );
         });
 
@@ -1291,7 +1292,7 @@ describe('contest controller', () => {
                 await flushPromises();
 
                 expect(pageFiles.writePage.mock.calls.length).toBe(writes + 1);
-                expect(writtenPaths().at(-1)).toBe(`${ROOT}/submission-details/Submission 27 · A. A + B.md`);
+                expect(writtenPaths().at(-1)).toBe(`${ROOT}/submission-details/Submission 27 · A + B.md`);
                 expect(pageContent()).not.toContain('Still being judged');
                 expect(pageContent()).toContain('Accepted');
                 expect(openTextDocument.mock.calls.length).toBe(opens);
@@ -2059,9 +2060,9 @@ describe('contest controller', () => {
             expect(pageFiles.writeComparison).toHaveBeenCalledWith(852, '3\n', '4\n');
             expect(executeCommand).toHaveBeenCalledWith(
                 'vscode.diff',
-                fileUri(`${ROOT}/submission-output/852/expected.txt`),
                 fileUri(`${ROOT}/submission-output/852/received.txt`),
-                'Submission #852: expected ↔ received',
+                fileUri(`${ROOT}/submission-output/852/expected.txt`),
+                'Submission #852: your output ↔ expected',
             );
             expect(result).toEqual({
                 expectedPath: `${ROOT}/submission-output/852/expected.txt`,
@@ -2097,7 +2098,7 @@ describe('contest controller', () => {
 
             await buildLoggedInController(snapshot).submitActiveFile(snapshot.problems[0]);
 
-            expect(showWarningMessage).toHaveBeenCalledWith('Wrong Answer on A. A + B (#31)', 'View Details');
+            expect(showWarningMessage).toHaveBeenCalledWith('Wrong Answer on A + B (#31)', 'View Details');
         });
     });
 
@@ -2125,7 +2126,7 @@ describe('contest controller', () => {
                 { directoryUri: fileUri('/workspace/cases') },
             );
             expect(showInformationMessage).toHaveBeenCalledWith(
-                'Exported 1 public test case for A. A + B.',
+                'Exported 1 public test case for A + B.',
                 'Reveal in Explorer',
                 'Open First Case',
             );
@@ -2189,7 +2190,7 @@ describe('contest controller', () => {
             const result = await buildLoggedInController(snapshot).exportPublicCases(snapshot.problems[1]);
 
             expect(result).toBeNull();
-            expect(showInformationMessage).toHaveBeenCalledWith('B. Binary Search has no public test cases.');
+            expect(showInformationMessage).toHaveBeenCalledWith('Binary Search has no public test cases.');
             expect(showErrorMessage).not.toHaveBeenCalled();
             expect(submissionWorkspace.pickExportDirectory).not.toHaveBeenCalled();
         });
