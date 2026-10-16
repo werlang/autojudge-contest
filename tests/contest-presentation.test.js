@@ -4,9 +4,11 @@ import {
     getContestPageName,
     getProblemPageName,
     getSubmissionPageName,
+    getStandingsPageName,
     getTeamPageName,
     renderContestDashboard,
     renderProblemPage,
+    renderStandingsPage,
     renderSubmissionDetails,
     renderTeamStandingDetails,
     toSafeFileName,
@@ -226,8 +228,59 @@ describe('renderSubmissionDetails', () => {
     });
 });
 
+describe('renderStandingsPage', () => {
+    const contest = {
+        name: 'Regional Final',
+        problems: [
+            { publicId: 'pb', order: 2, title: 'Binary Search' },
+            { publicId: 'pa', order: 1, title: 'A + B' },
+        ],
+        teams: [
+            { publicId: 't1', name: 'Bits', score: 200000, solvedProblemIds: ['pa'] },
+            { publicId: 't2', name: 'Array | Ninjas', score: 350000, solvedProblemIds: ['pa', 'pb'] },
+            { publicId: 't3', name: 'Late', score: 0 },
+        ],
+    };
+
+    it('lists every ranked team with a column per problem, solved count, and time', () => {
+        const page = renderStandingsPage({ contest, team: { publicId: 't1' } });
+
+        expect(page).toBe([
+            '# Standings · Regional Final',
+            '',
+            '| # | Team | A | B | Solved | Time |',
+            '| ---: | :--- | :---: | :---: | ---: | ---: |',
+            '| 1 | Array \\| Ninjas | ✓ | ✓ | 2 | 5.8 min |',
+            '| 2 | **Bits** (you) | ✓ |  | 1 | 3.3 min |',
+            '| 3 | Late |  |  | 0 | — |',
+            '',
+            '## Problems',
+            '',
+            '- **A**: A + B',
+            '- **B**: Binary Search',
+            '',
+        ].join('\n'));
+        expect(page).not.toMatch(EMOJI);
+    });
+
+    it('notes a frozen scoreboard and leaves out problem columns when problems are unknown', () => {
+        const page = renderStandingsPage({ contest: { ...contest, problems: undefined, frozenScoreboard: true } });
+
+        expect(page).toContain('*The scoreboard is frozen. Final results appear after the contest.*');
+        expect(page).toContain('| # | Team | Solved | Time |');
+        expect(page).not.toContain('## Problems');
+        expect(page).toContain('| 2 | Bits | 1 | 3.3 min |');
+    });
+
+    it('says when there are no standings yet and names the page after the contest', () => {
+        expect(renderStandingsPage({ contest: { name: 'Cup' } })).toContain('*No standings yet.');
+        expect(renderStandingsPage(null)).toContain('# Standings\n');
+        expect(getStandingsPageName({ name: 'Cup' })).toBe('Standings · Cup');
+    });
+});
+
 describe('renderTeamStandingDetails', () => {
-    it('shows rank, solved count, total time, and lettered solved problems', () => {
+    it('shows rank, solved count, total time, and solved problems by title', () => {
         const page = renderTeamStandingDetails(CONTEST.teams[0], { contest: CONTEST });
 
         expect(page.startsWith('# Slow\n')).toBe(true);

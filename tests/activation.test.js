@@ -131,12 +131,15 @@ describe('contest extension activation', () => {
             'autojudgeContest.exportPublicCases',
             'autojudgeContest.openSubmission',
             'autojudgeContest.openTeamStanding',
+            'autojudgeContest.openStandings',
             'autojudgeContest.compareSubmissionOutput',
+            'autojudgeContest.showUnsolvedProblems',
+            'autojudgeContest.showAllProblems',
         ]);
         expect(registerUriHandler).toHaveBeenCalledTimes(1);
         expect(registerUriHandler).toHaveBeenCalledWith({ handleUri: expect.any(Function) });
-        // output channel, tree provider, two views, status bar, controller, browser login, URI handler, 10 commands
-        expect(context.subscriptions).toHaveLength(18);
+        // output channel, tree provider, two views, status bar, controller, browser login, URI handler, 13 commands
+        expect(context.subscriptions).toHaveLength(21);
     });
 
     it('still activates when autojudgeContest.baseUrl is empty or invalid', async () => {
@@ -210,7 +213,10 @@ describe('contest manifest contract', () => {
             'autojudgeContest.exportPublicCases',
             'autojudgeContest.openSubmission',
             'autojudgeContest.openTeamStanding',
+            'autojudgeContest.openStandings',
             'autojudgeContest.compareSubmissionOutput',
+            'autojudgeContest.showUnsolvedProblems',
+            'autojudgeContest.showAllProblems',
         ]));
         expect(manifest.contributes.commands.every(command => command.category === 'AutoJudge Contest' && !command.title.startsWith('AutoJudge Contest:'))).toBe(true);
         expect(manifest.contributes.commands.map(command => command.command)).not.toContain('autojudgeContest.createTestCases');
@@ -234,6 +240,14 @@ describe('contest manifest contract', () => {
                 group: expect.stringMatching(/^navigation/),
             }),
         ]));
+        // The explorer filter is one toolbar button that swaps on the context key.
+        const filterButtons = manifest.contributes.menus['view/title']
+            .filter(item => /^autojudgeContest\.show(Unsolved|All)Problems$/.test(item.command));
+        expect(filterButtons).toEqual([
+            expect.objectContaining({ command: 'autojudgeContest.showUnsolvedProblems', when: expect.stringContaining('!autojudgeContest.unsolvedOnly') }),
+            expect.objectContaining({ command: 'autojudgeContest.showAllProblems', when: expect.stringMatching(/&& autojudgeContest\.unsolvedOnly$/) }),
+        ]);
+        expect(filterButtons.every(item => item.when.includes('view == autojudgeContest.explorer') && item.group.startsWith('navigation'))).toBe(true);
         expect(manifest.contributes.configuration.properties).toEqual(expect.objectContaining({
             'autojudgeContest.baseUrl': expect.objectContaining({ scope: 'application' }),
             'autojudgeContest.pollIntervalMs': expect.any(Object),

@@ -4,10 +4,12 @@ import {
     formatSubmissionStatus,
     getContestPageName,
     getProblemPageName,
+    getStandingsPageName,
     getSubmissionPageName,
     getTeamPageName,
     renderContestDashboard,
     renderProblemPage,
+    renderStandingsPage,
     renderSubmissionDetails,
     renderTeamStandingDetails,
 } from '../presentation/contest-presentation.js';
@@ -32,6 +34,8 @@ const EXPLORER_RERENDER_INTERVAL_MS = 60 * 1000;
 const CONTEST_START_RETRY_MS = 60 * 1000;
 
 const LAST_PROBLEM_BY_FILE_KEY = 'autojudgeContest.lastProblemByFile';
+// User-wide memento key of the Contest Explorer "unsolved only" filter.
+const UNSOLVED_ONLY_KEY = 'autojudgeContest.unsolvedOnly';
 const MAX_REMEMBERED_FILES = 100;
 
 const LOG_IN_ACTION = 'Log In';
@@ -86,7 +90,7 @@ export function logToChannel(channel, level, message) {
  * argument may be a `{ modal, detail }` options object, followed by the action
  * labels, and they resolve with the chosen label.
  * @param {object} options
- * @param {object} options.context extension context (`storageUri`, `workspaceState`, `secrets`)
+ * @param {object} options.context extension context (`storageUri`, `workspaceState`, `globalState`, `secrets`)
  * @param {(command: string, ...args: unknown[]) => Promise<unknown> | unknown} [options.executeCommand]
  * @param {(uriOrPath: unknown) => Promise<{ uri: unknown }>} options.openTextDocument
  * @param {(document: unknown, options?: object) => Promise<unknown>} [options.showTextDocument]
@@ -113,7 +117,7 @@ export function logToChannel(channel, level, message) {
  * @param {(fsPath: string) => unknown} [options.toFileUri] converts a file path to a `vscode.Uri` for `vscode.diff`
  * @param {{ writePage: Function, writeComparison: Function }} [options.pageFiles] generated-file writer; defaults to one under the extension storage root
  * @param {() => number} [options.now]
- * @returns {{ dispose: () => void, loginTeam: Function, logoutTeam: Function, refreshTree: Function, openContestDashboard: Function, openProblem: Function, openSubmission: Function, openTeamStanding: Function, compareSubmissionOutput: Function, submitActiveFile: Function, exportPublicCases: Function }}
+ * @returns {{ dispose: () => void, loginTeam: Function, logoutTeam: Function, refreshTree: Function, openContestDashboard: Function, openProblem: Function, openSubmission: Function, openTeamStanding: Function, openStandings: Function, compareSubmissionOutput: Function, submitActiveFile: Function, exportPublicCases: Function }}
  */
 export function createContestController({
     browserLogin,
@@ -1310,9 +1314,35 @@ export function createContestController({
         },
 
         /**
-         * Diff a submission's expected and received output: both are written to
-         * `submission-output/<id>/` by the page-file writer and opened
-         * with `vscode.diff`.
+         * Open the full standings page: every ranked team with a column per
+         * problem, the solved count, and the total time, written under
+         * `standings`. Asks to log in when no contest is loaded.
+         * @returns {Promise<object | null>} the contest whose standings opened
+         */
+        async openStandings() {
+            const contest = currentSnapshot?.contest;
+            if (!contest) {
+                return promptLogIn();
+            }
+
+            try {
+                await openGeneratedPage(
+                    'standings',
+                    getStandingsPageName(contest),
+                    `standings-${resolveRouteId(contest) ?? 'unknown'}`,
+                    renderStandingsPage(currentSnapshot),
+                );
+                return contest;
+            }
+            catch (error) {
+                return handleFailure(error);
+            }
+        },
+
+        /**
+         * Diff a submission's received output against the expected output: both
+         * are written to `submission-output/<id>/` by the page-file writer and
+         * opened with `vscode.diff`, received on the left.
          * @param {object | undefined | null} submission submission or tree item `{ submission }`
          * @returns {Promise<{ expectedPath: string, receivedPath: string } | null>}
          */
@@ -1530,9 +1560,28 @@ export function createContestController({
 
             return withExplorerProgress(() => restoreSession(false));
         },
+
+        /**
+         * Show only unsolved problems in Contest Explorer, or all of them. The
+         * choice is kept in global state, so it survives reloads and applies
+         * to every workspace, and mirrored in a context key that swaps the
+         * view-title filter button.
+         * @param {boolean} unsolvedOnly
+         * @returns {Promise<void>}
+         */
+        async setUnsolvedOnly(unsolvedOnly) {
+            const value = Boolean(unsolvedOnly);
+            treeProvider.setUnsolvedOnly?.(value);
+            await setContext(CONTEXT_KEYS.UNSOLVED_ONLY, value);
+            await context?.globalState?.update?.(UNSOLVED_ONLY_KEY, value);
+        },
     };
 
     watchViewVisibility();
+    // Apply the remembered filter before the first restore renders the tree.
+    const initialUnsolvedOnly = context?.globalState?.get?.(UNSOLVED_ONLY_KEY) === true;
+    treeProvider.setUnsolvedOnly?.(initialUnsolvedOnly);
+    void Promise.resolve(setContext(CONTEXT_KEYS.UNSOLVED_ONLY, initialUnsolvedOnly));
     return controller;
 }
 

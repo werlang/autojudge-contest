@@ -135,6 +135,9 @@ export function registerContestCommands({
         vscode.commands.registerCommand(COMMANDS.EXPORT_PUBLIC_CASES, (item) => controller.exportPublicCases(item)),
         vscode.commands.registerCommand(COMMANDS.OPEN_SUBMISSION, (item) => controller.openSubmission(item)),
         vscode.commands.registerCommand(COMMANDS.OPEN_TEAM_STANDING, (item) => controller.openTeamStanding(item)),
+        vscode.commands.registerCommand(COMMANDS.OPEN_STANDINGS, () => controller.openStandings()),
         vscode.commands.registerCommand(COMMANDS.COMPARE_SUBMISSION_OUTPUT, (item) => controller.compareSubmissionOutput(item)),
+        vscode.commands.registerCommand(COMMANDS.SHOW_UNSOLVED_PROBLEMS, () => controller.setUnsolvedOnly(true)),
+        vscode.commands.registerCommand(COMMANDS.SHOW_ALL_PROBLEMS, () => controller.setUnsolvedOnly(false)),
     ];
 }

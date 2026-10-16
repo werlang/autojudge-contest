@@ -46,6 +46,7 @@ export class ContestTreeProvider {
         this.snapshot = null;
         this.state = 'loggedOut';
         this.now = options.now ?? Date.now;
+        this.unsolvedOnly = false;
         // Last built items by id, and each nested item's parent, so `getParent`
         // and `findSubmissionItem` work although items are rebuilt per render.
         this.itemsById = new Map();
@@ -91,6 +92,15 @@ export class ContestTreeProvider {
         this.state = snapshot ? 'loggedIn' : 'loggedOut';
         this.itemsById.clear();
         this.parentsById.clear();
+        this.refresh();
+    }
+
+    /**
+     * Show only unsolved problems, or all of them, and re-render the tree.
+     * @param {boolean} unsolvedOnly
+     */
+    setUnsolvedOnly(unsolvedOnly) {
+        this.unsolvedOnly = Boolean(unsolvedOnly);
         this.refresh();
     }
 
@@ -162,9 +172,16 @@ export class ContestTreeProvider {
 
         const problems = sortProblems(this.snapshot.problems);
         const submissions = Array.isArray(this.snapshot.submissions) ? this.snapshot.submissions : [];
-        const problemItems = problems.map(problem => this.buildProblemItem(problem, problems, submissions, now));
+        const allProblemItems = problems.map(problem => this.buildProblemItem(problem, problems, submissions, now));
+        const problemItems = this.unsolvedOnly
+            ? allProblemItems.filter(item => !item.solved)
+            : allProblemItems;
 
+        // Only shown rows are indexed, so a reveal never targets a hidden problem.
         this.indexItems(problemItems);
+        if (!problemItems.length && allProblemItems.length) {
+            return [header, buildAllSolvedItem()];
+        }
         return [header, ...problemItems];
     }
 
@@ -256,6 +273,7 @@ export class ContestTreeProvider {
             iconPath: this.createColoredCircleIcon(problem?.color, summary.solved),
             children,
             problem,
+            solved: summary.solved,
         };
     }
 
@@ -536,6 +554,20 @@ function buildNotStartedItem(started = false) {
         description: started ? 'Loading the problems…' : 'Problems appear when it starts',
         collapsibleState: 0,
         iconPath: new vscode.ThemeIcon('clock'),
+    };
+}
+
+/**
+ * Build the note shown when the "unsolved only" filter hides every problem.
+ * @returns {Record<string, unknown>}
+ */
+function buildAllSolvedItem() {
+    return {
+        id: 'all-solved',
+        label: 'All problems solved',
+        description: 'Show all problems to see them',
+        collapsibleState: 0,
+        iconPath: new vscode.ThemeIcon('pass-filled', new vscode.ThemeColor('testing.iconPassed')),
     };
 }
 

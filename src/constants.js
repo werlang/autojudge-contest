@@ -9,6 +9,8 @@ export const TEAMS_VIEW_ID = 'autojudgeContest.teams';
  */
 export const CONTEXT_KEYS = Object.freeze({
     STATE: 'autojudgeContest.state',
+    // True while Contest Explorer lists only unsolved problems.
+    UNSOLVED_ONLY: 'autojudgeContest.unsolvedOnly',
 });
 
 /**
@@ -33,10 +35,13 @@ export const COMMANDS = Object.freeze({
     EXPORT_PUBLIC_CASES: 'autojudgeContest.exportPublicCases',
     OPEN_SUBMISSION: 'autojudgeContest.openSubmission',
     OPEN_TEAM_STANDING: 'autojudgeContest.openTeamStanding',
+    OPEN_STANDINGS: 'autojudgeContest.openStandings',
     REFRESH_TREE: 'autojudgeContest.refreshTree',
     OPEN_CONTEST_DASHBOARD: 'autojudgeContest.openContestDashboard',
     SUBMIT_ACTIVE_FILE: 'autojudgeContest.submitActiveFile',
     COMPARE_SUBMISSION_OUTPUT: 'autojudgeContest.compareSubmissionOutput',
+    SHOW_UNSOLVED_PROBLEMS: 'autojudgeContest.showUnsolvedProblems',
+    SHOW_ALL_PROBLEMS: 'autojudgeContest.showAllProblems',
 });
 
 /**

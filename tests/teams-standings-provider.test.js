@@ -54,8 +54,14 @@ describe('teams standings provider', () => {
             token: 'jwt-token',
         });
 
-        const rows = provider.getChildren();
+        const [fullStandings, ...rows] = provider.getChildren();
 
+        expect(fullStandings).toEqual(expect.objectContaining({
+            id: 'standings:full',
+            label: 'Full standings',
+            iconPath: expect.objectContaining({ id: 'table' }),
+            command: expect.objectContaining({ command: COMMANDS.OPEN_STANDINGS }),
+        }));
         expect(rows).toEqual([
             expect.objectContaining({
                 command: expect.objectContaining({
@@ -106,7 +112,7 @@ describe('teams standings provider', () => {
             token: 'jwt-token',
         });
 
-        expect(provider.getChildren()).toEqual([
+        expect(provider.getChildren().slice(1)).toEqual([
             expect.objectContaining({ description: '0 solved', label: '1. Bits' }),
         ]);
     });
@@ -139,7 +145,7 @@ describe('teams standings provider', () => {
         ]);
     });
 
-    it('shows a non-clickable frozen row first while the scoreboard is frozen', () => {
+    it('shows a non-clickable frozen row right after the full standings row while the scoreboard is frozen', () => {
         const provider = new TeamsStandingsProvider();
 
         provider.setSnapshot({
@@ -150,8 +156,9 @@ describe('teams standings provider', () => {
             },
         });
 
-        const rows = provider.getChildren();
+        const [fullStandings, ...rows] = provider.getChildren();
 
+        expect(fullStandings.id).toBe('standings:full');
         expect(rows).toHaveLength(2);
         expect(rows[0]).toMatchObject({
             description: 'final results appear after the contest',
@@ -168,7 +175,7 @@ describe('teams standings provider', () => {
 
         provider.setSnapshot({ contest: { teams: [{ name: 'Bits', score: 0 }, { name: 'Bits', score: 0 }, { score: 1 }, { score: 2 }] } });
 
-        const rows = provider.getChildren();
+        const rows = provider.getChildren().slice(1);
         expect(rows).toHaveLength(4);
         expect(rows[0]).toMatchObject({ tooltip: expect.stringContaining('0 solved') });
         for (const row of rows) {
@@ -189,7 +196,7 @@ describe('teams standings provider', () => {
             },
         });
 
-        expect(provider.getChildren().map(row => row.label)).toEqual(['1. Alpha', '1. Beta', '3. Gamma']);
+        expect(provider.getChildren().slice(1).map(row => row.label)).toEqual(['1. Alpha', '1. Beta', '3. Gamma']);
     });
 
     it('caps long team names in the label so the stats stay visible, keeping the full name in the tooltip', () => {

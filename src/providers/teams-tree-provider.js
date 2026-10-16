@@ -78,7 +78,11 @@ export class TeamsStandingsProvider {
         const problemCount = Array.isArray(contest?.problems) ? contest.problems.length : null;
         const rows = standingsTeams.map(team => buildStandingTeamItem(team, this.snapshot?.team, problemCount));
 
-        return contest?.frozenScoreboard ? [buildFrozenScoreboardItem(), ...rows] : rows;
+        return [
+            buildFullStandingsItem(),
+            ...(contest?.frozenScoreboard ? [buildFrozenScoreboardItem()] : []),
+            ...rows,
+        ];
     }
 
     /**
@@ -100,6 +104,25 @@ function buildEmptyStandingsItem() {
         label: 'No standings yet',
         description: 'They appear once teams join the contest',
         collapsibleState: 0,
+    };
+}
+
+/**
+ * Build the first row, which opens the full standings table (every team with
+ * a column per problem).
+ * @returns {Record<string, unknown>}
+ */
+function buildFullStandingsItem() {
+    return {
+        id: 'standings:full',
+        label: 'Full standings',
+        description: 'every team and problem',
+        iconPath: new vscode.ThemeIcon('table'),
+        collapsibleState: 0,
+        command: {
+            command: COMMANDS.OPEN_STANDINGS,
+            title: 'Open Full Standings',
+        },
     };
 }
 

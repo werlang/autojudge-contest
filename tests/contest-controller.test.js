@@ -716,6 +716,28 @@ describe('contest controller', () => {
         });
     });
 
+    describe('full standings', () => {
+        it('opens the standings table named after the contest', async () => {
+            const snapshot = createSnapshot();
+
+            const result = await buildLoggedInController(snapshot).openStandings();
+
+            expect(result).toBe(snapshot.contest);
+            expect(writtenPaths()).toEqual([`${ROOT}/standings/Standings · Regional Final.md`]);
+            expect(pageContent()).toContain('| 2 | **Bits** (you) | ✓ |  | 1 | 3.3 min |');
+        });
+
+        it('asks to log in first when no contest is loaded', async () => {
+            browserLogin.waitForHandoffCode.mockRejectedValue(new BrowserLoginError(LOGIN_FAILURE.CANCELLED, 'Login cancelled.'));
+
+            const result = await buildController().openStandings();
+
+            expect(result).toBeNull();
+            expect(showErrorMessage).toHaveBeenCalledWith('Log in to AutoJudge Contest first.', 'Log In');
+            expect(pageFiles.writePage).not.toHaveBeenCalled();
+        });
+    });
+
     describe('palette fallbacks', () => {
         it('asks which problem to open when the palette passes no argument', async () => {
             const snapshot = createFullSnapshot();
@@ -1994,6 +2016,37 @@ describe('contest controller', () => {
             await flushPromises();
 
             expect(sessionApi.clearStoredSession).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('unsolved-only filter', () => {
+        it('applies the remembered filter at creation and keeps a new choice in global state', async () => {
+            const globalStateStore = { 'autojudgeContest.unsolvedOnly': true };
+            context.globalState = {
+                get: (key) => globalStateStore[key],
+                update: vi.fn(async (key, value) => {
+                    globalStateStore[key] = value;
+                }),
+            };
+            treeProvider.setUnsolvedOnly = vi.fn();
+
+            const controller = buildController();
+            expect(treeProvider.setUnsolvedOnly).toHaveBeenCalledWith(true);
+            expect(setContext).toHaveBeenCalledWith('autojudgeContest.unsolvedOnly', true);
+
+            await controller.setUnsolvedOnly(false);
+            expect(treeProvider.setUnsolvedOnly).toHaveBeenLastCalledWith(false);
+            expect(setContext).toHaveBeenLastCalledWith('autojudgeContest.unsolvedOnly', false);
+            expect(globalStateStore['autojudgeContest.unsolvedOnly']).toBe(false);
+        });
+
+        it('shows all problems by default', () => {
+            treeProvider.setUnsolvedOnly = vi.fn();
+
+            buildController();
+
+            expect(treeProvider.setUnsolvedOnly).toHaveBeenCalledWith(false);
+            expect(setContext).toHaveBeenCalledWith('autojudgeContest.unsolvedOnly', false);
         });
     });
 

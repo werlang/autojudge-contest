@@ -54,7 +54,10 @@
     "onCommand:autojudgeContest.exportPublicCases",
     "onCommand:autojudgeContest.openSubmission",
     "onCommand:autojudgeContest.openTeamStanding",
+    "onCommand:autojudgeContest.openStandings",
     "onCommand:autojudgeContest.compareSubmissionOutput",
+    "onCommand:autojudgeContest.showUnsolvedProblems",
+    "onCommand:autojudgeContest.showAllProblems",
     "onView:autojudgeContest.explorer",
     "onView:autojudgeContest.teams"
   ],
@@ -171,14 +174,42 @@
         "icon": "$(organization)"
       },
       {
+        "command": "autojudgeContest.openStandings",
+        "title": "Open Full Standings",
+        "category": "AutoJudge Contest",
+        "icon": "$(table)"
+      },
+      {
         "command": "autojudgeContest.compareSubmissionOutput",
         "title": "Compare Expected and Received Output",
         "category": "AutoJudge Contest",
         "icon": "$(diff)"
+      },
+      {
+        "command": "autojudgeContest.showUnsolvedProblems",
+        "title": "Show Unsolved Problems Only",
+        "category": "AutoJudge Contest",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "autojudgeContest.showAllProblems",
+        "title": "Show All Problems",
+        "category": "AutoJudge Contest",
+        "icon": "$(filter-filled)"
       }
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "autojudgeContest.showUnsolvedProblems",
+          "when": "view == autojudgeContest.explorer && autojudgeContest.state == loggedIn && !autojudgeContest.unsolvedOnly",
+          "group": "navigation@0"
+        },
+        {
+          "command": "autojudgeContest.showAllProblems",
+          "when": "view == autojudgeContest.explorer && autojudgeContest.state == loggedIn && autojudgeContest.unsolvedOnly",
+          "group": "navigation@0"
+        },
         {
           "command": "autojudgeContest.refreshTree",
           "when": "view == autojudgeContest.explorer && autojudgeContest.state != loggedOut && autojudgeContest.state != loading",
@@ -297,6 +328,18 @@
         {
           "command": "autojudgeContest.openContestDashboard",
           "when": "autojudgeContest.state == loggedIn"
+        },
+        {
+          "command": "autojudgeContest.openStandings",
+          "when": "autojudgeContest.state == loggedIn"
+        },
+        {
+          "command": "autojudgeContest.showUnsolvedProblems",
+          "when": "autojudgeContest.state == loggedIn && !autojudgeContest.unsolvedOnly"
+        },
+        {
+          "command": "autojudgeContest.showAllProblems",
+          "when": "autojudgeContest.state == loggedIn && autojudgeContest.unsolvedOnly"
         },
         {
           "command": "autojudgeContest.logoutTeam",

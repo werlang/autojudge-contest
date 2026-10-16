@@ -1,13 +1,13 @@
-import { isPassedSubmission, isPendingSubmission } from '../utils/submission-status.js';
+import { isErrorSubmission, isFailedSubmission, isPassedSubmission, isPendingSubmission, isTimeLimitSubmission } from '../utils/submission-status.js';
 import { countSolvedProblems, findTeamStanding, normalizeStandingScore, resolveStandingTeams } from '../utils/standings.js';
-import { resolveRouteId, sameEntity } from '../utils/public-id.js';
+import { resolveRouteId, sameEntity, sameTeam } from '../utils/public-id.js';
 import { formatDuration, formatLocalDateTime, formatMinutes, formatRelativeTime } from '../utils/time-format.js';
 import { getContestDurationMinutes, getContestTiming, getProblemLetter, getProblemTitle, sortProblems, summarizeProblemSubmissions } from '../utils/contest-progress.js';
 import { extractPublicCases } from '../workspace/contest-public-cases.js';
 
 /*
  * Page layout shared by every generated Markdown page (problem, submission,
- * team standing, contest overview), so contestants scan them the same way:
+ * team standing, full standings, contest overview), so contestants scan them the same way:
  *
  *   # Title
  *
@@ -205,6 +205,59 @@ export function renderTeamStandingDetails(team, snapshot) {
 }
 
 /**
+ * Render the full standings page: one table row per ranked team with a `✓`
+ * column per solved problem, the solved count, and the total time. Problem
+ * titles are too long for column headers, so the columns are keyed by letter
+ * (contest order) and a legend under the table maps each letter to its title.
+ * The signed-in team is bold and marked `(you)`; a frozen scoreboard gets a
+ * note above the table. Problem columns and the legend are left out when the
+ * problems are not known (e.g. before the contest starts).
+ * @param {{ contest?: object, problems?: object[], team?: object } | null | undefined} snapshot
+ * @returns {string}
+ */
+export function renderStandingsPage(snapshot) {
+    const contest = snapshot?.contest;
+    const standings = contest ? resolveStandingTeams(contest) : [];
+    // Same source order as the team details page, so letters always agree.
+    const problems = sortProblems(contest?.problems ?? snapshot?.problems);
+    const letters = problems.map(problem => getProblemLetter(problem, problems) || '?');
+
+    const lines = [`# ${escapeInline(getStandingsPageName(contest))}`, ''];
+    if (contest?.frozenScoreboard) {
+        lines.push('*The scoreboard is frozen. Final results appear after the contest.*', '');
+    }
+
+    if (!standings.length) {
+        lines.push('*No standings yet. They appear once teams join the contest.*');
+        return `${lines.join('\n')}\n`;
+    }
+
+    lines.push(
+        `| # | Team | ${letters.map(letter => `${letter} | `).join('')}Solved | Time |`,
+        `| ---: | :--- | ${letters.map(() => ':---: | ').join('')}---: | ---: |`,
+    );
+    for (const team of standings) {
+        const solvedIds = Array.isArray(team.solvedProblemIds) ? team.solvedProblemIds : [];
+        const solvedCount = countSolvedProblems(team);
+        const name = escapeInline(team.name);
+        const nameCell = sameTeam(team, snapshot?.team) ? `**${name}** (you)` : name;
+        const cells = problems.map(problem => (solvedIds.includes(resolveRouteId(problem)) ? '✓' : ''));
+        // Total time means nothing without a solve.
+        const time = solvedCount ? formatMinutes(normalizeStandingScore(team)) : '—';
+        lines.push(`| ${team.rank} | ${nameCell} | ${cells.map(cell => `${cell} | `).join('')}${solvedCount} | ${time} |`);
+    }
+
+    if (problems.length) {
+        lines.push('', '## Problems', '');
+        problems.forEach((problem, index) => {
+            lines.push(`- **${letters[index]}**: ${escapeInline(getProblemTitle(problem, letters[index]))}`);
+        });
+    }
+
+    return `${lines.join('\n')}\n`;
+}
+
+/**
  * Render the "Contest Overview" page: phase, local start and end, remaining
  * time when the page was generated, rules, counts, and the team's position.
  * @param {object} contest
@@ -295,6 +348,16 @@ export function getSubmissionPageName(submission, problems = []) {
  */
 export function getTeamPageName(team) {
     return toText(team?.name) || 'Unnamed team';
+}
+
+/**
+ * Build the full standings page name: `Standings · Name`.
+ * @param {{ name?: string } | null | undefined} contest
+ * @returns {string}
+ */
+export function getStandingsPageName(contest) {
+    const name = toText(contest?.name);
+    return name ? `Standings · ${name}` : 'Standings';
 }
 
 /**
